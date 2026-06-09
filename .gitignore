@@ -30,7 +30,7 @@ dist/
 .agent/
 
 # Data artifacts
-data/
+/data/
 
 # Outputs
 outputs/runs/*

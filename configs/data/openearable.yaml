@@ -1,0 +1,11 @@
+dataset:
+  name: OpenEarable 2.0
+  root_dir: data/raw
+  processed_dir: data/processed
+  metadata_file: data/metadata/events_example.csv
+  sensors:
+    - bone_acc
+    - imu
+    - barometer
+    - lowrate_merged
+  todo: "Map the actual OpenEarable file layout and channel naming."

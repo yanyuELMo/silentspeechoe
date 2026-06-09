@@ -28,6 +28,10 @@ dist/
 .env
 .env.*
 .agent/
+.claude/
+.codex/
+AGENTS.md
+CLAUDE.md
 
 # Data artifacts
 /data/

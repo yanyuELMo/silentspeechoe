@@ -8,5 +8,6 @@
     "tests"
   ],
   "python.analysis.typeCheckingMode": "basic",
-  "ruff.nativeServer": "on"
+  "ruff.nativeServer": "on",
+  "makefile.configureOnOpen": false
 }

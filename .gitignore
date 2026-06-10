@@ -46,3 +46,10 @@ outputs/logs/*
 !outputs/logs/.gitkeep
 outputs/figures/*
 !outputs/figures/.gitkeep
+
+AGENTS.md
+CLAUDE.md
+
+.ssh/
+.vscode/
+Makefile

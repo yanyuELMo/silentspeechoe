@@ -3,19 +3,13 @@
 from __future__ import annotations
 
 import pytest
-import torch
 
-from silentspeechoe.data.collate import pad_collate
-from silentspeechoe.data.dataset import (
-    build_binaural_records,
-)
 from silentspeechoe.data.labels import (
     EVENT_FIELDS,
     parse_all_labels,
     parse_label_events,
     write_events_csv,
 )
-from silentspeechoe.models.bone_cnn import BoneBinauralCNN
 
 # ---------------------------------------------------------------------------
 # Session‑scoped fixtures (expensive ops cached once)
@@ -31,6 +25,9 @@ def all_labels():
 @pytest.fixture(scope="session")
 def binaural_records():
     """Build binaural records once and reuse across tests."""
+    pytest.importorskip("torch")
+    from silentspeechoe.data.dataset import build_binaural_records
+
     return build_binaural_records(".")
 
 
@@ -239,6 +236,9 @@ def test_build_binaural_records_fields(binaural_records):
 
 def test_bone_binaural_cnn_forward_shape():
     """Model should output [B, 36] for input [B, 2, T]."""
+    torch = pytest.importorskip("torch")
+    from silentspeechoe.models.bone_cnn import BoneBinauralCNN
+
     model = BoneBinauralCNN(in_channels=2, num_classes=36)
     B, C, T = 4, 2, 1000
     x = torch.randn(B, C, T)
@@ -248,6 +248,9 @@ def test_bone_binaural_cnn_forward_shape():
 
 def test_bone_binaural_cnn_train_mode():
     """Model should be trainable (gradients flow)."""
+    torch = pytest.importorskip("torch")
+    from silentspeechoe.models.bone_cnn import BoneBinauralCNN
+
     model = BoneBinauralCNN(in_channels=2, num_classes=36)
     model.train()
     x = torch.randn(2, 2, 500)
@@ -261,6 +264,9 @@ def test_bone_binaural_cnn_train_mode():
 
 def test_bone_binaural_cnn_variable_length():
     """Model should handle different input lengths."""
+    torch = pytest.importorskip("torch")
+    from silentspeechoe.models.bone_cnn import BoneBinauralCNN
+
     model = BoneBinauralCNN(in_channels=2, num_classes=36)
     for T in (100, 500, 2000):
         x = torch.randn(1, 2, T)
@@ -275,6 +281,9 @@ def test_bone_binaural_cnn_variable_length():
 
 def test_pad_collate_same_length():
     """Samples with same length should not be padded."""
+    torch = pytest.importorskip("torch")
+    from silentspeechoe.data.collate import pad_collate
+
     items = [
         {"x": torch.randn(2, 100), "y": i, "speech_mode": "normal", "subject_id": "00"}
         for i in range(4)
@@ -288,6 +297,9 @@ def test_pad_collate_same_length():
 
 def test_pad_collate_variable_length():
     """Shorter samples should be zero‑padded to the max length."""
+    torch = pytest.importorskip("torch")
+    from silentspeechoe.data.collate import pad_collate
+
     items = [
         {"x": torch.randn(2, 100), "y": 0, "speech_mode": "normal", "subject_id": "00"},
         {
@@ -309,6 +321,9 @@ def test_pad_collate_variable_length():
 
 def test_pad_collate_empty_batch():
     """Empty batch should return empty tensors."""
+    pytest.importorskip("torch")
+    from silentspeechoe.data.collate import pad_collate
+
     batch = pad_collate([])
     assert batch["x"].numel() == 0
     assert batch["y"].numel() == 0

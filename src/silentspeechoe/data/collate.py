@@ -16,24 +16,38 @@ def pad_collate(batch: list[dict]) -> dict:
     Each dataset item is expected to be a dict with at least::
 
         {
-            "x":           FloatTensor [C, T_i],
-            "y":           int,
-            "speech_mode": str,
-            "subject_id":  str,
+            "x":             FloatTensor [C, T_i],
+            "y":             int,
+            "domain":        str,
+            "subject_id":    str,
+            "event_id":      int,
+            "sentence_id":   str,
+            "repeat_id":     int,
+            "length":        int,
+            "left_length":   int,
+            "right_length":  int,
         }
 
-    Returns a dict with the same keys, where ``x`` is padded to
-    ``[B, C, max_T]``, ``y`` is ``LongTensor [B]``, and the string
-    fields are plain lists of length ``B``.
+    Returns a dict with:
 
-    An additional key ``lengths`` (``LongTensor [B]``) stores the
-    original (un‑padded) time dimension of each sample.
+    * ``x`` — ``FloatTensor [B, C, max_T]`` (zero‑padded)
+    * ``y`` — ``LongTensor [B]``
+    * ``lengths`` — ``LongTensor [B]``
+    * ``left_lengths`` — ``LongTensor [B]``
+    * ``right_lengths`` — ``LongTensor [B]``
+    * ``domain``, ``subject_id``, ``sentence_id`` — list of str
+    * ``event_id``, ``repeat_id`` — list of int
     """
     xs: list[torch.Tensor] = []
     ys: list[int] = []
-    modes: list[str] = []
+    domains: list[str] = []
     subjects: list[str] = []
+    event_ids: list[int] = []
+    sentence_ids: list[str] = []
+    repeat_ids: list[int] = []
     lengths: list[int] = []
+    left_lengths: list[int] = []
+    right_lengths: list[int] = []
 
     for item in batch:
         x = item["x"]
@@ -41,9 +55,14 @@ def pad_collate(batch: list[dict]) -> dict:
             raise ValueError(f"Expected x of shape [C, T], got {x.shape}")
         xs.append(x)
         ys.append(int(item["y"]))
-        modes.append(item["speech_mode"])
+        domains.append(item.get("domain", item.get("speech_mode", "")))
         subjects.append(item["subject_id"])
-        lengths.append(x.shape[1])
+        event_ids.append(int(item.get("event_id", -1)))
+        sentence_ids.append(str(item.get("sentence_id", "")))
+        repeat_ids.append(int(item.get("repeat_id", -1)))
+        lengths.append(int(item.get("length", x.shape[1])))
+        left_lengths.append(int(item.get("left_length", x.shape[1])))
+        right_lengths.append(int(item.get("right_length", x.shape[1])))
 
     max_len = max(lengths) if lengths else 0
     C = xs[0].shape[0] if xs else 0
@@ -57,6 +76,11 @@ def pad_collate(batch: list[dict]) -> dict:
         "x": padded,
         "y": torch.tensor(ys, dtype=torch.long),
         "lengths": torch.tensor(lengths, dtype=torch.long),
-        "speech_mode": modes,
+        "left_lengths": torch.tensor(left_lengths, dtype=torch.long),
+        "right_lengths": torch.tensor(right_lengths, dtype=torch.long),
+        "domain": domains,
         "subject_id": subjects,
+        "event_id": event_ids,
+        "sentence_id": sentence_ids,
+        "repeat_id": repeat_ids,
     }

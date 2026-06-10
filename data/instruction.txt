@@ -1,0 +1,265 @@
+你现在的数据最适合做“多传感器时序融合”，不是传统 audio+video 那种多模态。建
+  议这样做：
+
+  推荐方案
+  第一版模型用 3 个模态：
+
+  模态 1: bone_acc
+  bone_acc.x, bone_acc.y, bone_acc.z
+
+  模态 2: accel
+  acc.x, acc.y, acc.z
+
+  模态 3: gyro
+  gyro.x, gyro.y, gyro.z
+
+  先不要把 barometer 放进去；mag 可以后面做 ablation。
+
+  数据切片
+  用 labels 切窗口。每个 normal/whisper 句子段作为一个样本：
+
+  输入: 该句子时间段内的传感器序列
+  标签: normal / whisper / silent 或 sentence_id
+
+  如果你要识别“句子内容”，标签是 sentence_id。
+  如果你要识别“发声方式”，标签是 normal / whisper / silent。
+  如果你要同时识别，可以做 multi-task：
+
+  head 1: sentence_id
+  head 2: speech_mode
+
+  采样率统一
+  不同传感器采样率不一样，所以先统一到一个时间网格。建议：
+
+  100 Hz 或 200 Hz
+
+  对每个模态插值/重采样：
+
+  bone_acc -> 100/200 Hz
+  acc      -> 100/200 Hz
+  gyro     -> 100/200 Hz
+
+  如果你要保留 bone_acc 高频信息，可以用 200 Hz 起步。不要直接用原始不等长、
+  不等频率 CSV 塞模型。
+
+  特征
+  每个模态除了原始三轴，建议加 norm 和 diff：
+
+  bone_acc.x/y/z
+  bone_acc_norm
+  bone_acc_diff_norm
+
+  acc.x/y/z
+  acc_norm
+  acc_diff_norm
+
+  gyro.x/y/z
+  gyro_norm
+  gyro_diff_norm
+
+  这样每个模态 5 个左右通道，比较稳。
+
+  模型结构
+  第一版别太复杂。推荐 late-fusion 或 mid-fusion：
+
+  bone_acc encoder: 1D CNN / BiLSTM / Transformer
+  acc encoder:      1D CNN / BiLSTM / Transformer
+  gyro encoder:     1D CNN / BiLSTM / Transformer
+
+  concat embeddings
+  classification head
+
+  如果你想快速做 baseline：
+
+  每个模态: 1D CNN
+  融合: concat
+  输出: classifier
+
+  结构大概是：
+
+  bone_acc sequence -> CNN -> embedding
+  acc sequence      -> CNN -> embedding
+  gyro sequence     -> CNN -> embedding
+
+  [embedding_bone, embedding_acc, embedding_gyro] -> MLP -> prediction
+
+  训练标签建议
+  你现在 labels 里 normal/whisper 更可靠，silent 没有声学波形，但传感器可能仍
+  有口型/动作信号。建议分阶段：
+
+  1. 先做 normal vs whisper
+  2. 再做 normal vs whisper vs silent
+  3. 最后做 sentence_id 或 sentence_id + mode
+
+  数据划分
+  不要随机按窗口划分，否则同一个受试者的数据会泄漏。建议：
+
+  train subjects / val subjects / test subjects
+
+  例如：
+
+  train: 00-15
+  val:   17-19
+  test:  20-21
+
+  更严谨可以 leave-one-subject-out。
+
+  最推荐的第一版 pipeline
+
+  1. 用 labels 切 normal/whisper 段
+  2. 每段前后加 0.2s padding
+  3. 重采样到 200 Hz
+  4. 输入 bone_acc + acc + gyro
+  5. 训练 1D CNN late-fusion
+  6. 做 ablation:
+     bone_acc only
+     bone_acc + acc
+     bone_acc + gyro
+     bone_acc + acc + gyro
+     all + mag
+
+  如果结果显示 bone_acc only 已经很强，再加 imu 的收益可能有限；但多模态论文/
+  实验里可以把 ablation 作为重要结果。
+
+ 建议你用一个轻量 PyTorch 研究工程模板，不要一开始上太复杂的 MLOps。你的任务
+  是多模态时序分类/识别，推荐结构：
+
+  project/
+    data/
+      processed/              # 训练切好的 npz/parquet，不放原始大数据
+    configs/
+      train.yaml
+      model.yaml
+    src/
+      datasets/
+        openearable_dataset.py
+      models/
+        cnn_fusion.py
+      utils/
+        features.py
+        metrics.py
+      train.py
+      eval.py
+    scripts/
+      prepare_segments.py     # 从 labels + dataset2 切样本
+    outputs/
+    requirements.txt
+    Dockerfile
+    docker-compose.yml
+
+  你现在最适合的技术栈：
+
+  PyTorch
+  numpy / pandas / scipy
+  scikit-learn
+  matplotlib
+  tqdm
+  pyyaml 或 hydra-core
+  tensorboard 或 wandb
+
+  第一版模型建议先用普通 PyTorch，不要先上很复杂的 Lightning。等 baseline 稳
+  了再重构。
+
+  Dockerfile 推荐
+  如果你有 NVIDIA GPU，用这个方向：
+
+  FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+
+  WORKDIR /workspace
+
+  ENV PYTHONUNBUFFERED=1
+  ENV PIP_NO_CACHE_DIR=1
+
+  RUN apt-get update && apt-get install -y --no-install-recommends \
+      git \
+      libsndfile1 \
+      ffmpeg \
+      && rm -rf /var/lib/apt/lists/*
+
+  COPY requirements.txt /workspace/requirements.txt
+  RUN pip install --upgrade pip && pip install -r requirements.txt
+
+  COPY src /workspace/src
+  COPY scripts /workspace/scripts
+  COPY configs /workspace/configs
+
+  CMD ["python", "-m", "src.train", "--config", "configs/train.yaml"]
+
+  requirements.txt 可以先这样：
+
+  numpy
+  pandas
+  scipy
+  scikit-learn
+  openpyxl
+  matplotlib
+  seaborn
+  tqdm
+  pyyaml
+  tensorboard
+  einops
+
+  如果你要用 Jupyter，再加：
+
+  jupyterlab
+  ipykernel
+
+  docker-compose.yml
+  数据不要 COPY 进镜像，直接挂载：
+
+  services:
+    train:
+      build: .
+      shm_size: "16gb"
+      volumes:
+        - .:/workspace
+        - "C:/A/MyFiles/DTU/Courses/Master Thesis/RAW_data/raw_data:/data/
+  raw_data"
+      working_dir: /workspace
+      command: python -m src.train --config configs/train.yaml
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: all
+                capabilities: [gpu]
+
+  如果不用 compose，直接：
+
+  docker build -t openearable-speech .
+  docker run --gpus all --rm -it ^
+    -v "%cd%:/workspace" ^
+    -v "C:\A\MyFiles\DTU\Courses\Master Thesis\RAW_data\raw_data:/data/
+  raw_data" ^
+    openearable-speech
+
+  训练代码里路径建议统一写成：
+
+  /data/raw_data/dataset2
+  /data/raw_data/left/labels_left_nw.xlsx
+  /data/raw_data/left/labels_left_silent.xlsx
+  /data/raw_data/right/labels_right_nw_aligned.xlsx
+  /data/raw_data/right/labels_right_silent_aligned.xlsx
+
+  模型工程第一版目标：
+
+  1. prepare_segments.py:
+     读取 labels，切 bone_acc / gyro / acc
+
+  2. openearable_dataset.py:
+     返回多模态 tensor
+
+  3. cnn_fusion.py:
+     bone_acc encoder + gyro encoder + acc encoder + fusion head
+
+  4. train.py:
+     subject-wise split，训练 normal / whisper / silent 或 sentence_id
+
+  最重要的一点：不要随机切 train/test。你应该按受试者划分：
+
+  train subjects
+  val subjects
+  test subjects
+
+  否则同一个受试者泄漏到训练和测试，结果会虚高。

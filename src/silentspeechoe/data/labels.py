@@ -357,11 +357,15 @@ def write_events_csv(
     return path
 
 
-def parse_all_labels(base_dir: str | Path = ".") -> list[dict[str, Any]]:
+def parse_all_labels(
+    base_dir: str | Path = ".",
+    *,
+    skip_missing_raw: bool = True,
+) -> list[dict[str, Any]]:
     """Parse labels in the legacy format used by the current dataset code."""
 
     legacy_records: list[dict[str, Any]] = []
-    for event in parse_label_events(base_dir):
+    for event in parse_label_events(base_dir, skip_missing_raw=skip_missing_raw):
         sentence_index = int(event["label_id"]) + 1
         legacy_records.append(
             {

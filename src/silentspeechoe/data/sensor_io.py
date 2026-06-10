@@ -22,6 +22,8 @@ def find_bone_acc_path(
     side: str,
     subset: str,
     base_dir: str | Path = ".",
+    *,
+    raw_root: str = "data/raw",
 ) -> Path | None:
     """Locate the bone‑acceleration CSV for a given subject / side / subset.
 
@@ -29,12 +31,16 @@ def find_bone_acc_path(
         subject_id: e.g. ``"00"``.
         side: ``"left"`` or ``"right"``.
         subset: ``"non-semantic"`` or ``"semantic"``.
-        base_dir: Project root.
+        base_dir: Project root (or parent of *raw_root* when overridden).
+        raw_root: Sub‑path under *base_dir* where raw data lives.
+            Default ``"data/raw"``.  Pass ``""`` when *base_dir* itself
+            is the raw root.
 
     Returns:
         Path to the CSV, or ``None`` if not found.
     """
-    pattern = Path(base_dir) / "data" / "raw" / side / subject_id / subset
+    raw_root_path = Path(raw_root) if raw_root else Path()
+    pattern = Path(base_dir) / raw_root_path / side / subject_id / subset
     if not pattern.exists():
         logger.debug("Directory missing: %s", pattern)
         return None

@@ -1,0 +1,20 @@
+experiment:
+  name: bone_binaural_all_modes
+  task: closed_set_sentence_classification
+  num_classes: 36
+  speech_modes:
+    - normal
+    - whisper
+    - silent
+  sentence_id_range:
+    start: 1
+    end: 36
+  validation_subjects:
+    - "07"
+    - "10"
+    - "13"
+    - "17"
+  split_strategy: subject_holdout
+  skip_missing_subjects: true
+  report_metrics_by:
+    - speech_mode

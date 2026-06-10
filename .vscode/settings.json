@@ -9,5 +9,8 @@
   ],
   "python.analysis.typeCheckingMode": "basic",
   "ruff.nativeServer": "on",
-  "makefile.configureOnOpen": false
+  "makefile.configureOnOpen": false,
+  "python.defaultInterpreterPath": "/opt/conda/bin/python",
+  "python-envs.defaultEnvManager": "ms-python.python:conda",
+  "python-envs.defaultPackageManager": "ms-python.python:conda"
 }

@@ -3,6 +3,8 @@ train:
   batch_size: 4
   num_workers: 0
   max_epochs: 1
+  learning_rate: 0.001
+  weight_decay: 0.0
+  padding_sec: 0.0
   device: cpu
   seed: 42
-  todo: "Keep this config minimal for smoke tests and local debugging."

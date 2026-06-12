@@ -15,6 +15,7 @@ MODULES = [
     "silentspeechoe.data.preprocessing",
     "silentspeechoe.data.collate",
     "silentspeechoe.features",
+    "silentspeechoe.features.bone_acc",
     "silentspeechoe.features.filters",
     "silentspeechoe.features.envelope",
     "silentspeechoe.models",
@@ -38,6 +39,8 @@ MODULES = [
 TORCH_REQUIRED_MODULES = {
     "silentspeechoe.data.dataset",
     "silentspeechoe.data.collate",
+    "silentspeechoe.features",
+    "silentspeechoe.features.bone_acc",
     "silentspeechoe.models.bone_cnn",
     "silentspeechoe.models.build",
     "silentspeechoe.training.trainer",

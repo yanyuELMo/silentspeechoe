@@ -29,9 +29,10 @@ def train_one_epoch(
     for batch in loader:
         x = batch["x"].to(device)
         y = batch["y"].to(device)
+        lengths = batch["lengths"].to(device)
 
         optimizer.zero_grad()
-        logits = model(x)
+        logits = model(x, lengths=lengths)
         loss = criterion(logits, y)
         loss.backward()
         optimizer.step()
@@ -64,9 +65,10 @@ def validate(
     for batch in loader:
         x = batch["x"].to(device)
         y = batch["y"].to(device)
-        groups = batch["speech_mode"]  # list of str
+        lengths = batch["lengths"].to(device)
+        groups = batch["domain"]  # list of str
 
-        logits = model(x)
+        logits = model(x, lengths=lengths)
         loss = criterion(logits, y)
 
         total_loss += float(loss.item())

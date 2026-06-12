@@ -1,7 +1,6 @@
-model:
-  name: imu_cnn
-  sensor_streams:
-    - imu
-  backbone: cnn_placeholder
-  output_type: closed_set_sentence_logits
-  todo: "Define IMU axis handling and normalization assumptions."
+name: imu_cnn
+sensor_streams:
+- imu
+backbone: cnn_placeholder
+output_type: closed_set_sentence_logits
+todo: Define IMU axis handling and normalization assumptions.

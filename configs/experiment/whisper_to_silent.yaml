@@ -1,9 +1,8 @@
-experiment:
-  name: whisper_to_silent
-  source_domain: whisper
-  target_domain: silent
-  sensors:
-    - bone_acc
-    - imu
-  evaluation_split: test
-  todo: "Use this as the likely primary transfer-learning baseline."
+name: whisper_to_silent
+source_domain: whisper
+target_domain: silent
+sensors:
+- bone_acc
+- imu
+evaluation_split: test
+todo: Use this as the likely primary transfer-learning baseline.

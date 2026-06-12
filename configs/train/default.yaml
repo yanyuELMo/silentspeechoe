@@ -1,10 +1,14 @@
-train:
-  name: default
-  batch_size: 16
-  num_workers: 4
-  max_epochs: 50
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  padding_sec: 0.2
-  device: cuda
-  seed: 42
+name: default
+batch_size: 32
+num_workers: 8
+max_epochs: 50
+learning_rate: 0.001
+weight_decay: 0.0001
+padding_sec: 0.0
+frame_ms: 50.0
+hop_ms: 10.0
+device: cuda
+seed: 42
+precomputed: true
+input_type: feature_bone
+processed_dir: features/bone_binaural

@@ -7,14 +7,15 @@ import torch.nn as nn
 
 
 class BoneBinauralCNN(nn.Module):
-    """Simple 1‑D CNN for binaural bone‑acceleration classification.
+    """1‑D CNN for binaural bone‑acceleration classification.
 
-    Expected input shape: ``[B, 2, T]`` where channel 0 is the left‑ear
-    magnitude and channel 1 is the right‑ear magnitude.
+    Input shape: ``[B, C, T]`` where *C* is the number of channels
+    (2 for raw magnitude, 60 for engineered features) and *T* is the
+    variable‑length time / frame dimension.
 
     Architecture::
 
-        Conv1d → ReLU → Conv1d → ReLU → GlobalAvgPool → Linear → C
+        Conv1d → ReLU → Conv1d → ReLU → MaskedAvgPool → Dropout → Linear → C
     """
 
     def __init__(
@@ -45,11 +46,18 @@ class BoneBinauralCNN(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.classifier = nn.Linear(conv2_channels, num_classes)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass.
+    def forward(
+        self,
+        x: torch.Tensor,
+        lengths: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Forward pass with optional length‑aware pooling.
 
         Args:
             x: ``[B, C, T]`` float tensor.
+            lengths: ``[B]`` long tensor of valid time steps.
+                If ``None``, a simple global mean is used (backward
+                compatible with equal‑length or pre‑padded inputs).
 
         Returns:
             ``[B, num_classes]`` logits.
@@ -57,6 +65,16 @@ class BoneBinauralCNN(nn.Module):
         x = self.relu(self.conv1(x))
         x = self.relu(self.conv2(x))
         x = self.dropout(x)
-        # Global average pooling over the time dimension
-        x = x.mean(dim=-1)  # [B, conv2_channels]
+
+        if lengths is not None:
+            # Masked mean pooling — only average over valid steps.
+            max_t = x.shape[-1]
+            mask = (
+                torch.arange(max_t, device=x.device)[None, :] < lengths[:, None]
+            )  # [B, T]
+            mask = mask.unsqueeze(1)  # [B, 1, T]
+            x = (x * mask).sum(dim=-1) / lengths[:, None].clamp(min=1)  # [B, C]
+        else:
+            x = x.mean(dim=-1)  # [B, conv2_channels]
+
         return self.classifier(x)

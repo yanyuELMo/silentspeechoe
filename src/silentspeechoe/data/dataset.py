@@ -168,6 +168,24 @@ def _raw_subset(sentence_type: str) -> str:
     raise ValueError(f"Unknown sentence_type: {sentence_type!r}")
 
 
+def _bone_acc_path_from_event(
+    raw_dir: Path,
+    *,
+    ear: str,
+    subject_id: str,
+    sentence_type: str,
+    session_id: str,
+) -> Path:
+    """Build the exact raw bone-acceleration path for one event row."""
+    return (
+        raw_dir
+        / ear
+        / _raw_subject_id(subject_id)
+        / _raw_subset(sentence_type)
+        / f"sensor_{session_id}__bone_acc.csv"
+    )
+
+
 def build_binaural_event_records(
     events_path: str | Path = "data/metadata/events.csv",
     raw_dir: str | Path = "data/raw",
@@ -217,25 +235,32 @@ def build_binaural_event_records(
 
     for _, row in merged.iterrows():
         subject_id = str(row["subject_id"])
-        raw_subj = _raw_subject_id(subject_id)
-        sentence_type = str(row["sentence_type_left"])
-        subset = _raw_subset(sentence_type)
+        left_sentence_type = str(row["sentence_type_left"])
+        right_sentence_type = str(row["sentence_type_right"])
 
-        left_path = find_bone_acc_path(
-            raw_subj, "left", subset, base_dir=raw_dir, raw_root=""
+        left_path = _bone_acc_path_from_event(
+            raw_dir,
+            ear="left",
+            subject_id=subject_id,
+            sentence_type=left_sentence_type,
+            session_id=str(row["session_id_left"]),
         )
-        right_path = find_bone_acc_path(
-            raw_subj, "right", subset, base_dir=raw_dir, raw_root=""
+        right_path = _bone_acc_path_from_event(
+            raw_dir,
+            ear="right",
+            subject_id=subject_id,
+            sentence_type=right_sentence_type,
+            session_id=str(row["session_id_right"]),
         )
 
-        if left_path is None:
+        if not left_path.exists():
             logger.debug(
                 "Skipping pair for subject=%s event=%s: missing left raw",
                 subject_id,
                 row["event_id"],
             )
             continue
-        if right_path is None:
+        if not right_path.exists():
             logger.debug(
                 "Skipping pair for subject=%s event=%s: missing right raw",
                 subject_id,
@@ -251,7 +276,7 @@ def build_binaural_event_records(
                 "label_id": int(row["label_id"]),
                 "domain": str(row["domain"]),
                 "repeat_id": int(row["repeat_id"]),
-                "sentence_type": sentence_type,
+                "sentence_type": left_sentence_type,
                 "left_path": left_path,
                 "right_path": right_path,
                 "left_start_time": float(row["start_time_left"]),
@@ -360,6 +385,206 @@ class BoneBinauralDataset(Dataset):
         return slice_bone_acc_window(
             df, start_sec, end_sec, padding_sec=self.padding_sec
         )
+
+
+# ---------------------------------------------------------------------------
+# Feature‑engineered Dataset
+# ---------------------------------------------------------------------------
+
+
+class BoneBinauralFeatureDataset(Dataset):
+    """Torch Dataset that applies feature extraction per sample.
+
+    Each item is a dict::
+
+        {
+            "x":               FloatTensor [60, N],
+            "y":               int (0‑35),
+            "domain":          str,
+            "subject_id":      str,
+            "event_id":        int,
+            "sentence_id":     str,
+            "repeat_id":       int,
+            "num_frames":      int,
+            "left_num_frames":  int,
+            "right_num_frames": int,
+        }
+
+    Uses :func:`~silentspeechoe.features.bone_acc.extract_binaural_bone_features`.
+    """
+
+    def __init__(
+        self,
+        records: list[dict],
+        frame_ms: float = 50.0,
+        hop_ms: float = 10.0,
+    ):
+        self.records = records
+        self.frame_ms = frame_ms
+        self.hop_ms = hop_ms
+
+        # Cache for loaded dataframes — keyed by path.
+        self._df_cache: dict[str, pd.DataFrame] = {}
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, idx: int) -> dict:
+        from silentspeechoe.features.bone_acc import extract_binaural_bone_features
+
+        rec = self.records[idx]
+
+        # Load and slice left ear.
+        left_df = self._load_df(rec["left_path"])
+        left_mask = (left_df["timestamp"] >= rec["left_start_time"]) & (
+            left_df["timestamp"] <= rec["left_end_time"]
+        )
+        left_xyz = left_df.loc[
+            left_mask, ["bone_acc.x", "bone_acc.y", "bone_acc.z"]
+        ].to_numpy(dtype=np.float32)
+        left_ts = left_df.loc[left_mask, "timestamp"].to_numpy(dtype=np.float64)
+
+        # Load and slice right ear.
+        right_df = self._load_df(rec["right_path"])
+        right_mask = (right_df["timestamp"] >= rec["right_start_time"]) & (
+            right_df["timestamp"] <= rec["right_end_time"]
+        )
+        right_xyz = right_df.loc[
+            right_mask, ["bone_acc.x", "bone_acc.y", "bone_acc.z"]
+        ].to_numpy(dtype=np.float32)
+        right_ts = right_df.loc[right_mask, "timestamp"].to_numpy(dtype=np.float64)
+
+        features, meta = extract_binaural_bone_features(
+            left_xyz,
+            left_ts,
+            right_xyz,
+            right_ts,
+            frame_ms=self.frame_ms,
+            hop_ms=self.hop_ms,
+        )
+
+        return {
+            "x": features.T.contiguous(),  # [60, N] (C=60, T=num_frames)
+            "y": int(rec["label_id"]),
+            "domain": rec["domain"],
+            "subject_id": rec["subject_id"],
+            "event_id": int(rec["event_id"]),
+            "sentence_id": str(rec["sentence_id"]),
+            "repeat_id": int(rec["repeat_id"]),
+            "num_frames": meta["num_frames"],
+            "left_num_frames": meta["left_num_frames"],
+            "right_num_frames": meta["right_num_frames"],
+        }
+
+    def _load_df(self, path: Path) -> pd.DataFrame:
+        import pandas as pd
+
+        cache_key = str(path)
+        if cache_key not in self._df_cache:
+            self._df_cache[cache_key] = pd.read_csv(path)
+        return self._df_cache[cache_key]
+
+
+# ---------------------------------------------------------------------------
+# Pre‑computed Feature Dataset
+# ---------------------------------------------------------------------------
+
+
+class BoneBinauralPrecomputedDataset(Dataset):
+    """Torch Dataset that loads pre‑computed features from ``.pt`` files.
+
+    Assumes features were pre‑computed by
+    :file:`scripts/precompute_features.py`.  Each ``.pt`` file contains a
+    dict with keys ``x``, ``y``, ``domain``, ``subject_id``, ``event_id``,
+    ``sentence_id``, ``repeat_id``, ``num_frames``, ``left_num_frames``,
+    ``right_num_frames``.
+
+    ``__getitem__`` only does a ``torch.load`` call — near‑zero CPU cost.
+    """
+
+    def __init__(self, manifest_path: str | Path, features_dir: str | Path):
+        import json
+
+        manifest_path = Path(manifest_path)
+        features_dir = Path(features_dir)
+
+        with manifest_path.open("r") as f:
+            manifest_data = json.load(f)
+
+        self.features_dir = features_dir
+        self.records = manifest_data["records"]
+
+        # Store feature params for reference (useful for checks).
+        self.frame_ms = float(manifest_data.get("frame_ms", 50.0))
+        self.hop_ms = float(manifest_data.get("hop_ms", 10.0))
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, idx: int) -> dict:
+        rec = self.records[idx]
+        file_path = self.features_dir / rec["file"]
+        data = torch.load(file_path, weights_only=True)
+        return {
+            "x": data["x"],  # [C, N] — already contiguous
+            "y": int(data["y"]),
+            "domain": data["domain"],
+            "subject_id": data["subject_id"],
+            "event_id": int(data["event_id"]),
+            "sentence_id": str(data["sentence_id"]),
+            "repeat_id": int(data["repeat_id"]),
+            "num_frames": int(data.get("num_frames", data["x"].shape[1])),
+            "left_num_frames": int(data.get("left_num_frames", data["x"].shape[1])),
+            "right_num_frames": int(data.get("right_num_frames", data["x"].shape[1])),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Pre‑computed Raw Bone Dataset
+# ---------------------------------------------------------------------------
+
+
+class BoneRawPrecomputedDataset(Dataset):
+    """Torch Dataset that loads pre‑computed raw bone‑acc windows from ``.pt`` files.
+
+    Assumes windows were pre‑computed by
+    :file:`scripts/precompute_raw_bone.py`.  Each ``.pt`` file contains a
+    dict with keys ``x`` (``[6, T]`` tensor), ``y``, ``domain``,
+    ``subject_id``, ``event_id``, ``sentence_id``, ``repeat_id``,
+    ``length``.
+
+    ``__getitem__`` only does a ``torch.load`` call — near‑zero CPU cost.
+    """
+
+    def __init__(self, manifest_path: str | Path, features_dir: str | Path):
+        import json
+
+        manifest_path = Path(manifest_path)
+        features_dir = Path(features_dir)
+
+        with manifest_path.open("r") as f:
+            manifest_data = json.load(f)
+
+        self.features_dir = features_dir
+        self.records = manifest_data["records"]
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, idx: int) -> dict:
+        rec = self.records[idx]
+        file_path = self.features_dir / rec["file"]
+        data = torch.load(file_path, weights_only=True)
+        return {
+            "x": data["x"],  # [6, T] — already contiguous
+            "y": int(data["y"]),
+            "domain": data["domain"],
+            "subject_id": data["subject_id"],
+            "event_id": int(data["event_id"]),
+            "sentence_id": str(data["sentence_id"]),
+            "repeat_id": int(data["repeat_id"]),
+            "length": int(data["length"]),
+        }
 
 
 def iter_batch_groups(dataset: BoneBinauralDataset) -> Iterator[str]:

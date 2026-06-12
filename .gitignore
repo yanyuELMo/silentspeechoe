@@ -54,3 +54,5 @@ CLAUDE.md
 .ssh/
 .vscode/
 Makefile
+
+outputs/diagnostics/*

@@ -1,9 +1,8 @@
-experiment:
-  name: normal_to_silent
-  source_domain: normal
-  target_domain: silent
-  sensors:
-    - bone_acc
-    - imu
-  evaluation_split: test
-  todo: "Clarify adaptation strategy between audible and silent speech."
+name: normal_to_silent
+source_domain: normal
+target_domain: silent
+sensors:
+- bone_acc
+- imu
+evaluation_split: test
+todo: Clarify adaptation strategy between audible and silent speech.

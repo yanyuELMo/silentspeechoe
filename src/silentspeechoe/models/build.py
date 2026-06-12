@@ -9,9 +9,10 @@ from __future__ import annotations
 from omegaconf import DictConfig
 
 from .bone_cnn import BoneBinauralCNN
+from .bone_tcn import BoneRawTCN
 
 
-def build_model(cfg: DictConfig) -> BoneBinauralCNN:
+def build_model(cfg: DictConfig) -> BoneBinauralCNN | BoneRawTCN:
     """Build a model according to the Hydra config.
 
     The ``model`` config group is expected to provide at least ``name``.
@@ -20,13 +21,13 @@ def build_model(cfg: DictConfig) -> BoneBinauralCNN:
     Currently supported model names:
 
     * ``bone_binaural`` — :class:`BoneBinauralCNN`
+    * ``bone_raw_tcn`` — :class:`BoneRawTCN`
     """
     model_cfg = cfg.model
     name = model_cfg.name
 
     if name == "bone_binaural":
         kwargs: dict = {}
-        # Forward optional model-config fields if present
         for key in (
             "in_channels",
             "num_classes",
@@ -39,5 +40,23 @@ def build_model(cfg: DictConfig) -> BoneBinauralCNN:
             if key in model_cfg:
                 kwargs[key] = model_cfg[key]
         return BoneBinauralCNN(**kwargs)
+
+    if name == "bone_raw_tcn":
+        kwargs: dict = {}
+        for key in (
+            "in_channels",
+            "hidden_channels",
+            "num_classes",
+            "kernel_size",
+            "dilations",
+            "dropout",
+        ):
+            if key in model_cfg:
+                val = model_cfg[key]
+                # Hydra stores lists as ListConfig — convert to tuple.
+                if key == "dilations" and not isinstance(val, tuple):
+                    val = tuple(int(d) for d in val)
+                kwargs[key] = val
+        return BoneRawTCN(**kwargs)
 
     raise ValueError(f"Unknown model name: {name}")

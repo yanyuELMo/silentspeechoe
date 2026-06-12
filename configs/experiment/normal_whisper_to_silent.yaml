@@ -1,12 +1,11 @@
-experiment:
-  name: normal_whisper_to_silent
-  source_domains:
-    - normal
-    - whisper
-  target_domain: silent
-  sensors:
-    - bone_acc
-    - imu
-    - lowrate_merged
-  evaluation_split: test
-  todo: "Decide whether source domains are merged jointly or staged."
+name: normal_whisper_to_silent
+source_domains:
+- normal
+- whisper
+target_domain: silent
+sensors:
+- bone_acc
+- imu
+- lowrate_merged
+evaluation_split: test
+todo: Decide whether source domains are merged jointly or staged.

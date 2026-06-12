@@ -10,6 +10,7 @@ __pycache__/
 .coverage
 htmlcov/
 
+
 # Virtual environments
 .venv/
 venv/
@@ -28,9 +29,14 @@ dist/
 .env
 .env.*
 .agent/
+.claude/
+.codex/
+AGENTS.md
+CLAUDE.md
 
-# Data artifacts
-data/
+# Data artifacts (large raw/processed files — metadata is tracked)
+/data/raw/
+/data/processed/
 
 # Outputs
 outputs/runs/*
@@ -41,3 +47,12 @@ outputs/logs/*
 !outputs/logs/.gitkeep
 outputs/figures/*
 !outputs/figures/.gitkeep
+
+AGENTS.md
+CLAUDE.md
+
+.ssh/
+.vscode/
+Makefile
+
+outputs/diagnostics/*

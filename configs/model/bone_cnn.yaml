@@ -1,7 +1,8 @@
-model:
-  name: bone_cnn
-  sensor_streams:
-    - bone_acc
-  backbone: cnn_placeholder
-  output_type: closed_set_sentence_logits
-  todo: "Specify channel dimensions and temporal receptive field."
+name: bone_binaural
+in_channels: 60
+num_classes: 36
+conv1_channels: 64
+conv2_channels: 128
+kernel_size_1: 7
+kernel_size_2: 5
+dropout: 0.3

@@ -1,0 +1,7 @@
+name: OpenEarable 2.0
+root_dir: data/raw
+processed_dir: data/processed
+metadata_file: data/metadata/events.csv
+sensors:
+  - bone_acc
+todo: "Expand to IMU / barometer when multi-modal experiments begin."

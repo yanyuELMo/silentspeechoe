@@ -1,7 +1,14 @@
-"""Loss function placeholders.
+"""Loss functions for sentence classification.
 
-TODO:
-    Add sentence-classification losses and optional domain adaptation terms.
+The primary loss is standard cross‑entropy. Multi‑task or domain‑adaptation
+losses can be added later.
 """
 
 from __future__ import annotations
+
+import torch.nn as nn
+
+
+def build_loss() -> nn.Module:
+    """Return the default cross‑entropy loss for 36‑way classification."""
+    return nn.CrossEntropyLoss()

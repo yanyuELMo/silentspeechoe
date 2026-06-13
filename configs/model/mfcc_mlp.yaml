@@ -1,0 +1,7 @@
+name: mfcc_mlp
+in_features: 234
+num_classes: 36
+hidden1: 256
+hidden2: 128
+dropout: 0.3
+output_type: closed_set_sentence_logits

@@ -1,0 +1,22 @@
+name: imu_double_nonsemantic_to_semantic_identification
+task: subject_identification
+num_classes: 17
+source_domains:
+  - normal
+  - whisper
+  - silent
+target_domains:
+  - normal
+  - whisper
+  - silent
+source_sentence_types:
+  - non_semantic
+target_sentence_types:
+  - semantic
+sensors:
+  - imu
+feature_set: imu_te_binaural_lrdiff_200hz_raw9
+split_strategy: sentence_type_holdout_all_subjects
+evaluation_split: semantic_all_modes
+report_metrics_by:
+  - domain

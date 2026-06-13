@@ -1,0 +1,25 @@
+name: imu_left_whisper_to_all
+task: closed_set_sentence_classification
+num_classes: 36
+source_domain: whisper
+target_domains:
+  - normal
+  - whisper
+  - silent
+speech_modes:
+  - normal
+  - whisper
+  - silent
+sensors:
+  - imu
+side: left
+validation_subjects:
+  - "07"
+  - "10"
+  - "13"
+  - "17"
+split_strategy: subject_holdout
+evaluation_split: validation_subject_holdout
+skip_missing_subjects: true
+report_metrics_by:
+  - domain

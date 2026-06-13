@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from copy import deepcopy
 
 import torch
 import torch.nn as nn
@@ -12,6 +13,13 @@ from torch.utils.data import DataLoader
 from silentspeechoe.evaluation.metrics import compute_grouped_classification_metrics
 
 logger = logging.getLogger(__name__)
+
+
+def _copy_model_state(model: nn.Module) -> dict[str, torch.Tensor]:
+    """Copy model weights to CPU for stable checkpoint selection."""
+    return {
+        key: value.detach().cpu().clone() for key, value in model.state_dict().items()
+    }
 
 
 def train_one_epoch(
@@ -111,8 +119,12 @@ def run_training(
     """Full training loop.
 
     Returns a dict with per‑epoch ``train_loss`` and ``val_metrics``.
+    The dict also includes the best model snapshots by validation loss
+    and overall validation accuracy.
     """
     history: dict[str, list] = defaultdict(list)
+    best_loss: dict | None = None
+    best_accuracy: dict | None = None
 
     for epoch in range(1, max_epochs + 1):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
@@ -121,15 +133,37 @@ def run_training(
         history["train_loss"].append(train_loss)
         history["val_metrics"].append(val_metrics)
 
+        val_loss = float(val_metrics["val_loss"])
+        val_accuracy = float(val_metrics["overall"]["accuracy"])
+        if best_loss is None or val_loss < float(best_loss["value"]):
+            best_loss = {
+                "epoch": epoch,
+                "value": val_loss,
+                "model_state_dict": _copy_model_state(model),
+                "optimizer_state_dict": deepcopy(optimizer.state_dict()),
+                "val_metrics": val_metrics,
+            }
+        if best_accuracy is None or val_accuracy > float(best_accuracy["value"]):
+            best_accuracy = {
+                "epoch": epoch,
+                "value": val_accuracy,
+                "model_state_dict": _copy_model_state(model),
+                "optimizer_state_dict": deepcopy(optimizer.state_dict()),
+                "val_metrics": val_metrics,
+            }
+
         if epoch % log_interval == 0:
             logger.info(
                 "Epoch %3d | train loss %.4f | val loss %.4f | "
                 "val acc %.4f | val top3 %.4f",
                 epoch,
                 train_loss,
-                val_metrics["val_loss"],
-                val_metrics["overall"]["accuracy"],
+                val_loss,
+                val_accuracy,
                 val_metrics["overall"]["top3_accuracy"],
             )
 
-    return dict(history)
+    result = dict(history)
+    result["best_val_loss"] = best_loss
+    result["best_accuracy"] = best_accuracy
+    return result

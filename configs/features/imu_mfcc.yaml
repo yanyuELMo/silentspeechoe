@@ -1,0 +1,10 @@
+name: imu_mfcc
+n_mfcc: 13
+n_mels: 20
+frame_length: 50
+hop_length: 10
+fmin: 0.5
+fmax: 90.0
+sample_rate: 200.0
+use_delta: false
+n_fft: null

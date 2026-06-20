@@ -32,10 +32,15 @@ pytest
 
 ## Suggested Workflow
 
-1. Start in the Dev Container for a reproducible CUDA-ready environment.
+1. Start in the Dev Container for a reproducible environment.
 2. Refine `configs/` before implementing data pipelines or models.
 3. Add functionality incrementally under `src/silentspeechoe/`.
 4. Keep tests focused on structure and import safety until behavior exists.
+
+## Dev Container Modes
+
+- Default: `.devcontainer/devcontainer.json` does not require NVIDIA runtime.
+- GPU: `.devcontainer/gpu/devcontainer.json` adds `gpus: all` for CUDA work.
 
 ## Repository Layout
 

@@ -1,8 +1,0 @@
-name: fusion_cnn
-sensor_streams:
-- bone_acc
-- imu
-- barometer
-backbone: fusion_cnn_placeholder
-output_type: closed_set_sentence_logits
-todo: Choose early, late, or hybrid fusion once baselines exist.

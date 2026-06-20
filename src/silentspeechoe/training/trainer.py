@@ -22,6 +22,18 @@ def _copy_model_state(model: nn.Module) -> dict[str, torch.Tensor]:
     }
 
 
+def _forward_train(
+    model: nn.Module,
+    x: torch.Tensor,
+    lengths: torch.Tensor,
+    y: torch.Tensor,
+) -> torch.Tensor:
+    """Forward helper for models that need labels during training."""
+    if bool(getattr(model, "requires_labels_for_training", False)):
+        return model(x, lengths=lengths, labels=y)
+    return model(x, lengths=lengths)
+
+
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -40,7 +52,7 @@ def train_one_epoch(
         lengths = batch["lengths"].to(device)
 
         optimizer.zero_grad()
-        logits = model(x, lengths=lengths)
+        logits = _forward_train(model, x, lengths, y)
         loss = criterion(logits, y)
         loss.backward()
         optimizer.step()

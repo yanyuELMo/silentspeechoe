@@ -10,12 +10,21 @@ from omegaconf import DictConfig
 
 from .bone_cnn import BoneBinauralCNN
 from .bone_tcn import BoneRawTCN
-from .imu_cnn import IMUCNN, IMUMLP, MFCCMLP, IMUDoubleCNN
+from .imu_cnn import IMUCNN, IMUDoubleCNN
+from .imu_mlp import IMUMLP, MFCCMLP, IMUMLPArcFace
 
 
 def build_model(
     cfg: DictConfig,
-) -> BoneBinauralCNN | BoneRawTCN | IMUCNN | IMUDoubleCNN | IMUMLP | MFCCMLP:
+) -> (
+    BoneBinauralCNN
+    | BoneRawTCN
+    | IMUCNN
+    | IMUDoubleCNN
+    | IMUMLP
+    | IMUMLPArcFace
+    | MFCCMLP
+):
     """Build a model according to the Hydra config.
 
     The ``model`` config group is expected to provide at least ``name``.
@@ -26,6 +35,10 @@ def build_model(
     * ``bone_binaural`` — :class:`BoneBinauralCNN`
     * ``bone_raw_tcn`` — :class:`BoneRawTCN`
     * ``imu_cnn`` — :class:`IMUCNN`
+    * ``imu_double_cnn`` — :class:`IMUDoubleCNN`
+    * ``mfcc_mlp`` — :class:`MFCCMLP`
+    * ``imu_mlp`` — :class:`IMUMLP`
+    * ``imu_mlp_arcface`` — :class:`IMUMLPArcFace`
     """
     model_cfg = cfg.model
     name = model_cfg.name
@@ -105,6 +118,21 @@ def build_model(
             if key in model_cfg:
                 kwargs[key] = model_cfg[key]
         return IMUMLP(**kwargs)
+
+    if name == "imu_mlp_arcface":
+        kwargs: dict = {}
+        for key in (
+            "in_features",
+            "num_classes",
+            "hidden1",
+            "hidden2",
+            "dropout",
+            "arcface_scale",
+            "arcface_margin",
+        ):
+            if key in model_cfg:
+                kwargs[key] = model_cfg[key]
+        return IMUMLPArcFace(**kwargs)
 
     if name in {"imu_double_cnn", "imu_feature_cnn"}:
         kwargs: dict = {}

@@ -9,7 +9,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
-
+.ssh/
 
 # Virtual environments
 .venv/
@@ -54,5 +54,4 @@ CLAUDE.md
 .ssh/
 .vscode/
 Makefile
-
-outputs/diagnostics/*
+outputs/

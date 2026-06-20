@@ -31,8 +31,9 @@ from silentspeechoe.features.imu_temporal_envelope import (  # noqa: E402
     _GLOBAL_STAT_NAMES,
     _NUM_SEGMENTS,
     _SEGMENT_STAT_NAMES,
-    FEATURE_DIM,
+    derived_signal_names_for_num_channels,
     extract_imu_temporal_envelope_features,
+    feature_dim_for_num_channels,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -46,6 +47,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--input-dir", required=True, help="Processed IMU directory.")
     p.add_argument("--out-dir", required=True, help="Output directory for features.")
     p.add_argument("--envelope-window", type=int, default=11, help="MA window size.")
+    p.add_argument(
+        "--channel-indices",
+        nargs="+",
+        type=int,
+        default=None,
+        help=(
+            "Optional input channel indices to keep before feature extraction. "
+            "Use 0 1 2 3 4 5 for acc+gyro only."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -64,13 +75,29 @@ def main(argv: list[str] | None = None) -> None:
         manifest = json.load(f)
 
     records = manifest["records"]
-    channels = manifest.get("channels", [f"ch{i}" for i in range(9)])
+    source_channels = manifest.get("channels", [f"ch{i}" for i in range(9)])
+    if args.channel_indices is None:
+        channels = list(source_channels)
+    else:
+        invalid = [
+            idx
+            for idx in args.channel_indices
+            if idx < 0 or idx >= len(source_channels)
+        ]
+        if invalid:
+            raise ValueError(
+                f"channel-indices contains out-of-range indices {invalid} "
+                f"for {len(source_channels)} source channels"
+            )
+        channels = [source_channels[idx] for idx in args.channel_indices]
+    feature_dim = feature_dim_for_num_channels(len(channels))
+    derived_signals = derived_signal_names_for_num_channels(len(channels))
 
     logger.info("Input dir       : %s", input_dir)
     logger.info("Output dir      : %s", out_dir)
     logger.info("Samples         : %d", len(records))
     logger.info("Channels        : %d (%s)", len(channels), ", ".join(channels))
-    logger.info("Feature dim     : %d", FEATURE_DIM)
+    logger.info("Feature dim     : %d", feature_dim)
     logger.info("Envelope window : %d", args.envelope_window)
 
     new_records: list[dict] = []
@@ -85,6 +112,8 @@ def main(argv: list[str] | None = None) -> None:
 
         data = torch.load(src_file, weights_only=True)
         x = data["x"].numpy()  # [9, T]
+        if args.channel_indices is not None:
+            x = x[args.channel_indices, :]
 
         features = extract_imu_temporal_envelope_features(
             x,
@@ -130,11 +159,13 @@ def main(argv: list[str] | None = None) -> None:
         "name": out_dir.name,
         "num_samples": len(new_records),
         "num_skipped": num_skipped,
-        "feature_dim": FEATURE_DIM,
+        "feature_dim": feature_dim,
         "source_dir": str(input_dir.resolve()),
         "sample_rate": manifest.get("target_sample_rate", 200.0),
+        "source_channels": source_channels,
         "channels": channels,
-        "derived_signals": ["acc_mag", "gyro_mag", "mag_mag"],
+        "channel_indices": args.channel_indices,
+        "derived_signals": derived_signals,
         "num_segments": _NUM_SEGMENTS,
         "envelope": {
             "method": "moving_average_abs",

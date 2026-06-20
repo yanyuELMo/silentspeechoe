@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from silentspeechoe.evaluation.metrics import (
+    compute_authentication_metrics,
     compute_classification_metrics,
     compute_grouped_classification_metrics,
 )
@@ -268,6 +269,93 @@ def test_grouped_metrics_accept_single_sample_group():
 
 
 # ---------------------------------------------------------------------------
+# Authentication metrics
+# ---------------------------------------------------------------------------
+
+
+def test_authentication_metrics_perfect_one_vs_all():
+    """Perfect subject scores should give zero EER/FAR/FRR."""
+    y_true = np.repeat(np.arange(4), 5)
+    y_score = np.full((y_true.shape[0], 4), -10.0, dtype=np.float32)
+    y_score[np.arange(y_true.shape[0]), y_true] = 10.0
+
+    result = compute_authentication_metrics(y_true, y_score, top_k=2)
+
+    assert result["accuracy"] == 1.0
+    assert result["macro_f1"] == 1.0
+    assert result["balanced_accuracy"] == 1.0
+    assert result["top3_accuracy"] == 1.0
+    assert result["roc_auc"] == 1.0
+    assert result["eer"] == 0.0
+    assert result["far"] == 0.0
+    assert result["frr"] == 0.0
+    assert result["frr_at_far_1pct"] == 0.0
+    assert set(result["by_subject"].keys()) == {"0", "1", "2", "3"}
+
+
+def test_authentication_metrics_one_vs_all_counts():
+    """Each subject should be treated as positive against all others."""
+    y_true = np.array([0, 0, 1, 1, 2, 2])
+    y_score = np.full((6, 3), -5.0, dtype=np.float32)
+    y_score[np.arange(6), y_true] = 5.0
+
+    result = compute_authentication_metrics(y_true, y_score, top_k=2)
+
+    for subject in ("0", "1", "2"):
+        metrics = result["by_subject"][subject]
+        assert metrics["num_positive"] == 2.0
+        assert metrics["num_negative"] == 4.0
+        assert metrics["roc_auc"] == 1.0
+
+
+def test_authentication_metrics_nonperfect_scores_are_bounded():
+    """Authentication metrics should remain valid for imperfect scores."""
+    y_true = np.array([0, 0, 1, 1, 2, 2, 2])
+    y_score = np.array(
+        [
+            [3.0, 0.0, 0.0],
+            [2.0, 1.0, 0.0],
+            [2.5, 2.0, 0.0],  # class 1 sample confused with class 0
+            [0.0, 2.0, 1.0],
+            [0.0, 1.0, 3.0],
+            [0.0, 0.0, 2.0],
+            [1.0, 0.0, 2.0],
+        ],
+        dtype=np.float32,
+    )
+
+    result = compute_authentication_metrics(y_true, y_score, top_k=2)
+
+    for key in (
+        "accuracy",
+        "macro_f1",
+        "balanced_accuracy",
+        "top3_accuracy",
+        "roc_auc",
+        "eer",
+        "far",
+        "frr",
+        "frr_at_far_1pct",
+    ):
+        assert 0.0 <= result[key] <= 1.0
+    assert result["authentication"]["far_target"] == 0.01
+    assert result["authentication"]["num_subjects"] == 3.0
+
+
+def test_authentication_metrics_custom_far_target():
+    """The FRR at a requested FAR operating point should be exposed."""
+    y_true = np.repeat(np.arange(3), 4)
+    y_score = np.full((y_true.shape[0], 3), -2.0, dtype=np.float32)
+    y_score[np.arange(y_true.shape[0]), y_true] = 2.0
+
+    result = compute_authentication_metrics(y_true, y_score, top_k=2, far_target=0.05)
+
+    assert result["authentication"]["far_target"] == 0.05
+    assert result["frr_at_far_target"] == 0.0
+    assert result["far_at_far_target"] <= 0.05
+
+
+# ---------------------------------------------------------------------------
 # Input validation — ValueErrors
 # ---------------------------------------------------------------------------
 
@@ -344,3 +432,19 @@ def test_label_outside_score_classes_raises():
     y_score = np.random.randn(3, NUM_CLASSES)
     with pytest.raises(ValueError):
         compute_classification_metrics(y_true, y_pred, y_score)
+
+
+def test_authentication_metrics_invalid_far_target_raises():
+    """FAR target must be a probability."""
+    y_true = np.array([0, 1, 2])
+    y_score = np.eye(3)
+    with pytest.raises(ValueError):
+        compute_authentication_metrics(y_true, y_score, far_target=1.5)
+
+
+def test_authentication_metrics_requires_2d_scores():
+    """Authentication scores must be a [N, C] matrix."""
+    y_true = np.array([0, 1, 2])
+    y_score = np.array([1.0, 2.0, 3.0])
+    with pytest.raises(ValueError):
+        compute_authentication_metrics(y_true, y_score)

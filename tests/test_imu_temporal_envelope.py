@@ -7,8 +7,10 @@ import numpy as np
 from silentspeechoe.features.imu_temporal_envelope import (
     _PER_SIGNAL_DIM,
     FEATURE_DIM,
+    derived_signal_names_for_num_channels,
     extract_imu_temporal_envelope_features,
     extract_signal_features,
+    feature_dim_for_num_channels,
 )
 
 
@@ -76,3 +78,16 @@ class TestExtractIMUTemporalEnvelope:
     def test_magnitude_signals_added(self):
         """Verify the 3 magnitude channels are present in output dimension."""
         assert FEATURE_DIM == 12 * _PER_SIGNAL_DIM  # 9 raw + 3 mag = 12
+
+    def test_accgyro_output_dim(self):
+        rng = np.random.default_rng(11)
+        x = rng.normal(0, 1, (6, 2000)).astype(np.float32)
+        feats = extract_imu_temporal_envelope_features(x)
+        assert feats.shape == (288,)
+        assert feats.dtype == np.float32
+        assert np.all(np.isfinite(feats))
+
+    def test_accgyro_feature_dim_helper(self):
+        assert feature_dim_for_num_channels(6) == 288
+        assert derived_signal_names_for_num_channels(6) == ["acc_mag", "gyro_mag"]
+        assert feature_dim_for_num_channels(9) == FEATURE_DIM

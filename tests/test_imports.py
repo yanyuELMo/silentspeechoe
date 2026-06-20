@@ -13,6 +13,7 @@ MODULES = [
     "silentspeechoe.data.preprocessing",
     "silentspeechoe.models",
     "silentspeechoe.models.imu_cnn",
+    "silentspeechoe.models.imu_mlp",
     "silentspeechoe.models.fusion_cnn",
     "silentspeechoe.evaluation",
     "silentspeechoe.evaluation.metrics",

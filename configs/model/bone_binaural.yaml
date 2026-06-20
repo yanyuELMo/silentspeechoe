@@ -1,6 +1,0 @@
-name: bone_binaural_baseline
-sensor_streams:
-  - bone_acc
-sides:
-  - left
-  - right

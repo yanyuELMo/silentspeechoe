@@ -108,6 +108,35 @@ def _resolve_channel_indices(model_cfg: DictConfig) -> list[int] | None:
     return None
 
 
+def _resolve_subject_filter(exp_cfg: DictConfig, key: str) -> set[str]:
+    """Read canonical subject IDs from an optional experiment config key."""
+    subjects = exp_cfg.get(key, [])
+    if not subjects:
+        return set()
+    canonical = set()
+    for subject in subjects:
+        subject_id = str(subject)
+        canonical.add(
+            subject_id if subject_id.startswith("sub_") else f"sub_{subject_id}"
+        )
+    return canonical
+
+
+def _filter_indices_by_subjects(
+    records: list[dict],
+    indices: list[int],
+    subject_filter: set[str],
+) -> list[int]:
+    """Filter record indices by canonical subject IDs."""
+    if not subject_filter:
+        return indices
+    return [
+        index
+        for index in indices
+        if str(records[index]["subject_id"]) in subject_filter
+    ]
+
+
 class _FeatureVectorSubset(torch.utils.data.Dataset):
     """Subset wrapper for fixed vectors with optional targets and scaling."""
 
@@ -159,6 +188,33 @@ def _clone_state_dict(
 ) -> dict[str, torch.Tensor]:
     """Clone a state dict to CPU for portable checkpoint export."""
     return {key: value.detach().cpu().clone() for key, value in state_dict.items()}
+
+
+def _classification_metrics_to_json(
+    metrics: dict,
+    *,
+    epoch: int | None = None,
+    selection_metric: str | None = None,
+    selection_value: float | None = None,
+) -> dict:
+    """Convert validation metrics to a JSON-serializable dict."""
+    metrics_json = {
+        "overall": {k: float(v) for k, v in metrics["overall"].items()},
+        "by_domain": {},
+    }
+    for domain, domain_metrics in metrics["by_group"].items():
+        metrics_json["by_domain"][domain] = {
+            k: float(v) for k, v in domain_metrics.items()
+        }
+    if "val_loss" in metrics:
+        metrics_json["val_loss"] = float(metrics["val_loss"])
+    if epoch is not None:
+        metrics_json["epoch"] = int(epoch)
+    if selection_metric is not None:
+        metrics_json["selection_metric"] = selection_metric
+    if selection_value is not None:
+        metrics_json["selection_value"] = float(selection_value)
+    return metrics_json
 
 
 def _save_encoder(
@@ -228,6 +284,13 @@ def _save_encoder(
     # Resolve processed_dir for metadata.
     train_cfg = cfg.train
     processed_dir = str(train_cfg.get("processed_dir", "imu_windows/left_200hz_raw9"))
+    encoder_suffix = str(train_cfg.get("encoder_name_suffix", "")).strip()
+    if encoder_suffix:
+        safe_suffix = "".join(
+            ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in encoder_suffix
+        )
+        fname = fname.removesuffix("_encoder.pt")
+        fname = f"{fname}_{safe_suffix}_encoder.pt"
 
     # Extract encoder part (everything except the classifier).
     full_state = _clone_state_dict(model_state_dict or model.state_dict())
@@ -256,6 +319,14 @@ def _save_encoder(
         "validation_subjects": cfg.experiment.get("validation_subjects", []),
         "channels": selected_channels,
         "source_processed_dir": f"data/processed/{processed_dir}",
+        "source_sentence_types": list(cfg.experiment.get("source_sentence_types", [])),
+        "target_sentence_types": list(cfg.experiment.get("target_sentence_types", [])),
+        "train_subjects": sorted(
+            _resolve_subject_filter(cfg.experiment, "train_subjects")
+        ),
+        "target_subjects": sorted(
+            _resolve_subject_filter(cfg.experiment, "target_subjects")
+        ),
     }
     if selection_metric is not None:
         metadata["selection_metric"] = selection_metric
@@ -643,6 +714,19 @@ def main(cfg: DictConfig) -> None:
             if dom in target_domains and is_target_type:
                 val_candidates.append(i)
 
+        train_subject_filter = _resolve_subject_filter(exp_cfg, "train_subjects")
+        target_subject_filter = _resolve_subject_filter(exp_cfg, "target_subjects")
+        train_candidates = _filter_indices_by_subjects(
+            full_ds.records,
+            train_candidates,
+            train_subject_filter,
+        )
+        val_candidates = _filter_indices_by_subjects(
+            target_full_ds.records,
+            val_candidates,
+            target_subject_filter,
+        )
+
         task = str(exp_cfg.get("task", "closed_set_sentence_classification"))
         if task == "subject_identification":
             train_subjects = {
@@ -887,21 +971,55 @@ def main(cfg: DictConfig) -> None:
             best_acc_ckpt["selection_value"],
         )
 
-    # Final metrics JSON.
-    if val_metrics:
-        final = val_metrics[-1]
-        # Convert tensor values to float.
-        metrics_json = {
-            "overall": {k: float(v) for k, v in final["overall"].items()},
-            "by_domain": {},
-        }
-        for domain, dmetrics in final["by_group"].items():
-            metrics_json["by_domain"][domain] = {
-                k: float(v) for k, v in dmetrics.items()
-            }
+    # Metrics JSON. The primary result should match the selected best checkpoint,
+    # while the last epoch is saved separately for diagnosing late-epoch drift.
+    selected_metrics = None
+    selected_epoch = None
+    selected_metric_name = None
+    selected_value = None
+    if best_accuracy_snapshot is not None:
+        selected_metrics = best_accuracy_snapshot["val_metrics"]
+        selected_epoch = int(best_accuracy_snapshot["epoch"])
+        selected_metric_name = "overall_accuracy"
+        selected_value = float(best_accuracy_snapshot["value"])
+    elif best_loss_snapshot is not None:
+        selected_metrics = best_loss_snapshot["val_metrics"]
+        selected_epoch = int(best_loss_snapshot["epoch"])
+        selected_metric_name = "val_loss"
+        selected_value = float(best_loss_snapshot["value"])
+    elif val_metrics:
+        selected_metrics = val_metrics[-1]
+        selected_epoch = len(val_metrics)
+        selected_metric_name = "last_epoch"
+
+    if selected_metrics is not None:
+        metrics_json = _classification_metrics_to_json(
+            selected_metrics,
+            epoch=selected_epoch,
+            selection_metric=selected_metric_name,
+            selection_value=selected_value,
+        )
         with (output_dir / "final_metrics.json").open("w") as f:
             json.dump(metrics_json, f, indent=2)
-        logger.info("Final metrics saved to %s", output_dir / "final_metrics.json")
+        logger.info(
+            "Selected metrics saved to %s (metric=%s, epoch=%s)",
+            output_dir / "final_metrics.json",
+            selected_metric_name,
+            selected_epoch,
+        )
+
+    if val_metrics:
+        last_epoch_metrics = _classification_metrics_to_json(
+            val_metrics[-1],
+            epoch=len(val_metrics),
+            selection_metric="last_epoch",
+        )
+        with (output_dir / "last_epoch_metrics.json").open("w") as f:
+            json.dump(last_epoch_metrics, f, indent=2)
+        logger.info(
+            "Last-epoch metrics saved to %s",
+            output_dir / "last_epoch_metrics.json",
+        )
 
     # Config snapshot.
     with (output_dir / "config.yaml").open("w") as f:
@@ -935,14 +1053,14 @@ def main(cfg: DictConfig) -> None:
     )
 
     # ---- final report ------------------------------------------------------
-    if val_metrics:
-        final = val_metrics[-1]
-        logger.info("=== Final Validation ===")
+    if selected_metrics is not None:
+        logger.info("=== Selected Validation ===")
+        logger.info("  Selection: %s at epoch %s", selected_metric_name, selected_epoch)
         logger.info("  Overall:")
-        for k, v in final["overall"].items():
+        for k, v in selected_metrics["overall"].items():
             logger.info("    %s: %.4f", k, v)
         logger.info("  By domain:")
-        for domain, dmetrics in final["by_group"].items():
+        for domain, dmetrics in selected_metrics["by_group"].items():
             logger.info("    %s:", domain)
             for k, v in dmetrics.items():
                 logger.info("      %s: %.4f", k, v)

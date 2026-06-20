@@ -62,6 +62,30 @@ class _SimpleModel(torch.nn.Module):
         return self.fc(x)
 
 
+class _LabelAwareModel(torch.nn.Module):
+    """Tiny model that requires labels during training only."""
+
+    requires_labels_for_training = True
+
+    def __init__(self, in_channels=9, num_classes=36):
+        super().__init__()
+        self.pool = torch.nn.AdaptiveAvgPool1d(1)
+        self.fc = torch.nn.Linear(in_channels, num_classes)
+        self.train_label_calls = 0
+        self.eval_plain_calls = 0
+
+    def forward(self, x, lengths=None, labels=None):
+        del lengths
+        if self.training:
+            assert labels is not None
+            self.train_label_calls += 1
+        else:
+            assert labels is None
+            self.eval_plain_calls += 1
+        x = self.pool(x).squeeze(-1)
+        return self.fc(x)
+
+
 class TestTrainerSnapshots:
     def test_best_loss_tracked(self):
         model = _SimpleModel()
@@ -168,3 +192,24 @@ class TestTrainerSnapshots:
             assert "val_loss" in vm
             assert "overall" in vm
             assert "accuracy" in vm["overall"]
+
+    def test_label_aware_model_receives_training_labels_only(self):
+        model = _LabelAwareModel()
+        ds = _DummyDataset(16)
+        loader = DataLoader(ds, batch_size=8, collate_fn=_collate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        criterion = torch.nn.CrossEntropyLoss()
+
+        run_training(
+            model,
+            loader,
+            loader,
+            optimizer,
+            criterion,
+            device=torch.device("cpu"),
+            max_epochs=2,
+            log_interval=1,
+        )
+
+        assert model.train_label_calls > 0
+        assert model.eval_plain_calls > 0

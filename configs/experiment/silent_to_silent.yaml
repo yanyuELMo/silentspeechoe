@@ -1,7 +1,0 @@
-name: silent_to_silent
-source_domain: silent
-target_domain: silent
-sensors:
-- bone_acc
-evaluation_split: test
-todo: Define baseline silent-domain protocol and sentence inventory.

@@ -72,6 +72,32 @@ FEATURE_DIM: int = len(ALL_SIGNAL_NAMES) * (
 _PER_SIGNAL_DIM: int = FEATURE_DIM // len(ALL_SIGNAL_NAMES)  # 36
 
 
+def derived_signal_names_for_num_channels(num_channels: int) -> list[str]:
+    """Return magnitude signal names available for a channel count.
+
+    The standard channel order is expected: acc.xyz, gyro.xyz, then mag.xyz.
+    Six-channel acc+gyro input therefore yields acc_mag and gyro_mag only.
+    """
+    if num_channels < 3:
+        raise ValueError(
+            f"IMU temporal-envelope features need at least 3 channels, "
+            f"got {num_channels}"
+        )
+    if num_channels < 6:
+        return ["acc_mag"]
+    if num_channels < 9:
+        return ["acc_mag", "gyro_mag"]
+    return ["acc_mag", "gyro_mag", "mag_mag"]
+
+
+def feature_dim_for_num_channels(num_channels: int) -> int:
+    """Return the temporal-envelope feature dimension for C input channels."""
+    num_signals = num_channels + len(
+        derived_signal_names_for_num_channels(num_channels)
+    )
+    return num_signals * _PER_SIGNAL_DIM
+
+
 def _moving_average(signal: np.ndarray, window_size: int = 11) -> np.ndarray:
     """Boxcar moving average with reflective padding at boundaries."""
     if window_size <= 1 or signal.shape[0] < window_size:
@@ -214,28 +240,36 @@ def extract_imu_temporal_envelope_features(
     *,
     envelope_window: int = 11,
 ) -> np.ndarray:
-    """Extract temporal envelope features from a 9‑channel IMU window.
+    """Extract temporal-envelope features from an IMU window.
 
     Steps:
-        1. Compute 3 magnitude signals (acc, gyro, mag) → 12 signals total.
+        1. Compute available magnitude signals from acc, gyro, and mag.
         2. For each signal, extract 36 features (global + diff + envelope
            + segmented).
-        3. Concatenate into a flat ``[432]`` vector.
+        3. Concatenate into a flat vector.
 
     Args:
-        x: Float32 array of shape ``[9, T]`` (acc + gyro + mag).
+        x: Float32 array of shape ``[C, T]``. The standard channel order is
+            acc.xyz, gyro.xyz, then mag.xyz. C=6 keeps acc+gyro only; C=9
+            keeps acc+gyro+mag.
         envelope_window: Moving‑average window size for envelope.
 
     Returns:
-        Float32 array of shape ``[432]``.
+        Float32 feature vector. C=9 gives 432 dims; C=6 gives 288 dims.
     """
     C = x.shape[0]
-    # Derive 12 signals: 9 raw + 3 magnitude.
-    acc_mag = np.sqrt(x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
-    gyro_mag = np.sqrt(x[3] ** 2 + x[4] ** 2 + x[5] ** 2)
-    mag_mag = np.sqrt(x[6] ** 2 + x[7] ** 2 + x[8] ** 2)
+    if C < 3:
+        raise ValueError(f"Expected at least 3 IMU channels, got {C}")
 
-    signals: list[np.ndarray] = [x[c] for c in range(C)] + [acc_mag, gyro_mag, mag_mag]
+    signals: list[np.ndarray] = [x[c] for c in range(C)]
+    acc_mag = np.sqrt(x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
+    signals.append(acc_mag)
+    if C >= 6:
+        gyro_mag = np.sqrt(x[3] ** 2 + x[4] ** 2 + x[5] ** 2)
+        signals.append(gyro_mag)
+    if C >= 9:
+        mag_mag = np.sqrt(x[6] ** 2 + x[7] ** 2 + x[8] ** 2)
+        signals.append(mag_mag)
 
     features: list[np.ndarray] = []
     for sig in signals:

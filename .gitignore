@@ -28,11 +28,6 @@ dist/
 # Local environment
 .env
 .env.*
-.agent/
-.claude/
-.codex/
-AGENTS.md
-CLAUDE.md
 
 # Data artifacts (large raw/processed files — metadata is tracked)
 /data/raw/
@@ -41,6 +36,10 @@ CLAUDE.md
 
 # Local experiment scripts
 /scripts/
+
+# Model artifacts
+*.pt
+*.pth
 
 # Outputs
 outputs/runs/*
@@ -52,8 +51,6 @@ outputs/logs/*
 outputs/figures/*
 !outputs/figures/.gitkeep
 
-AGENTS.md
-CLAUDE.md
 .ssh/
 .vscode/
 Makefile
@@ -61,3 +58,4 @@ outputs/
 data/instructions.txt
 data/instructions2.txt
 data/数据构成.txt
+outputs/templates/*

@@ -1,237 +1,147 @@
-# silentspeechoe
+# ArticuEar
 
-Research codebase for a master thesis on earable sensor-based cross-domain
-silent speech experiments with OpenEarable 2.0 data.
+ArticuEar is a PyTorch research codebase for earable sensor-based silent speech
+experiments. The project is built around OpenEarable 2.0 recordings and focuses
+on learning compact sensor encoders from ear-worn motion and vibration signals.
 
-The repository focuses on clean, reproducible PyTorch baselines for sensor
-encoder evaluation, template generation, and template-based verification
-experiments.
+The repository is intended for master thesis research on cross-domain silent
+speech and speaker-related sensing. The main experimental setting studies how
+models trained from non-semantic utterances and different speaking modes can
+generalize to semantic utterances, especially across normal speech, whisper
+speech, and silent speech.
 
-## Scope
+The Python package namespace is currently `silentspeechoe` for historical
+compatibility, while the project name is ArticuEar.
 
-- Task: earable sensor-based silent speech experiments
-- Sensors: `bone_acc` and `imu`
-- Data source: OpenEarable 2.0 CSV streams
-- Main inputs: event-windowed sensor tensors from `events.csv`
-- Baselines: temporal CNN/TCN models for single-sensor authentication
-- Robustness setting: IMU augmentation for processed windows
+## Research Goal
 
-## Experiments
+Earable devices can capture subtle articulatory and head-motion cues during
+speech-like behavior. ArticuEar uses these signals to study whether lightweight
+neural encoders can learn stable representations from in-ear sensors under
+different speaking conditions.
 
-The project is organized into two evaluation blocks.
+The current codebase supports:
 
-### 1. Model / Encoder Evaluation
+- IMU and bone-conduction accelerometer data handling.
+- Window-level preprocessing and sensor dataset utilities.
+- IMU augmentation for robustness to wearing angle, rhythm, amplitude, and
+  sensor noise.
+- Temporal neural models such as TCN, CNN, MLP, LSTM, ResNet, and feature-token
+  Transformer variants.
+- Classification, ArcFace-style metric learning, and template-oriented
+  evaluation metrics.
+- Hydra-configured experiment, model, and training recipes.
 
-This block evaluates the encoder or model itself. Results are written under
-`outputs/runs/<sensor>/...`, for example `outputs/runs/imu/...`.
+## Tracked Repository Structure
 
-Only identification metrics are reported here via `metrics_identification`,
-for example:
-
-- accuracy
-- macro F1
-- balanced accuracy
-- top-3 accuracy
-
-This block is used to compare encoder quality before template generation.
-
-Result storage for this block:
-
-- encoder performance test results are stored under `outputs/runs/<sensor>/`
-- the subfolder name should describe the encoder or method, for example
-  `outputs/runs/imu/imu_tcn_first10_identification_semantic_val`
-
-### 2. Template-Based Evaluation
-
-After generating templates, the system is evaluated in a second block with two
-subsets.
-
-#### 2.1 Enrolled-User Evaluation
-
-This subset uses the same users that were used to train the encoder and build
-the enrolled templates.
-
-It reports:
-
-- identification metrics
-- authentication metrics
-- attack metrics
-
-Attack is defined as follows:
-
-- for enrolled-user evaluation, the attackers are the remaining unseen users
-  that were not used to train the encoder
-- one attack trial is one attacker-target pair, where each attacker attacks
-  each enrolled target user once
-- the attacker uses all of their available event samples as attack attempts,
-  including semantic and non-semantic samples and all speaking modes
-- attack samples must use the same input representation as the encoder and
-  template experiment; for example, a binaural temporal-envelope MLP experiment
-  attacks with the corresponding binaural IMU feature files
-- if any attempt in the trial crosses the selected target-user authentication
-  threshold, the whole trial counts as successful
-- `ASR = successful_trials / total_trials`
-
-Authentication reports:
-
-- EER
-- FRR at `FAR = 0.1%`
-- the actual FAR at the threshold selected for `FAR = 0.1%`
-
-The attack threshold is the target-user threshold selected at the
-`FAR = 0.1%` operating point.
-
-#### 2.2 Unseen-User Evaluation
-
-This subset evaluates the remaining unseen users that did not participate in
-encoder training.
-
-It reports the same metrics as enrolled-user evaluation:
-
-- identification metrics
-- authentication metrics
-- attack metrics
-
-The only difference is the attacker pool:
-
-- attackers are sampled from the encoder-training users
-- the number of sampled attackers matches the number of unseen users
-- for example, if there are 10 unseen users, 10 attackers are sampled from the
-  training users
-
-For the current 36/10 split, unseen-user evaluation therefore samples 10
-attackers from the 36 encoder-training users.
-
-The template-based evaluation results are also stored under
-`outputs/runs/<sensor>/...`, together with the corresponding threshold and
-attack summaries.
-
-Result storage for template generation and system evaluation:
-
-- generated templates are stored under `outputs/templates/<sensor>/<method>/`
-- the method folder should match the encoder or template method that produced
-  the templates, for example `outputs/templates/imu/tcn/`
-- within that method folder, keep separate subfolders for enrolled-user
-  templates and unseen-user templates
-- template-based system evaluation results are stored in the same folder used
-  for the encoder performance test, under `outputs/runs/<sensor>/<method>/`
-- template result batches should be stored under the corresponding encoder run
-  folder as `templates_result_<method_and_model>/`
-- inside that result batch folder, keep one result subfolder per template
-  folder, using the same name as the template folder; for example:
-  `outputs/runs/imu/imu_features_mlp_subjects36_nonsemantic/templates_result_temporal_envelope_mlp_mlp/subjects36_nonsemantic_normal_multicenter_k3/`
-
-## Data Layout
-
-Raw data is expected under:
+Only Git-tracked project files are described here. Large local artifacts such as
+raw sensor recordings, processed tensors, checkpoints, outputs, and ad-hoc local
+scripts are intentionally excluded from version control.
 
 ```text
-data/raw/
+.
+├── .devcontainer/
+│   ├── Dockerfile
+│   ├── devcontainer.json
+│   ├── docker-compose.yml
+│   ├── requirements-dev.txt
+│   └── requirements.txt
+├── .github/
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/ci.yml
+├── configs/
+│   ├── config.yaml
+│   ├── data/
+│   ├── experiment/
+│   ├── model/
+│   └── train/
+├── data/
+│   ├── README.md
+│   ├── instruction.txt
+│   ├── instruction2.txt
+│   └── metadata/
+├── src/
+│   └── silentspeechoe/
+│       ├── config.py
+│       ├── data/
+│       ├── evaluation/
+│       ├── features/
+│       ├── models/
+│       ├── training/
+│       └── utils/
+├── tests/
+├── LICENSE
+├── pyproject.toml
+└── README.md
 ```
 
-Event metadata is expected at:
+## Configuration
+
+The project uses Hydra for experiment management.
 
 ```text
-data/metadata/events.csv
+configs/data/        Dataset and sensor-data configuration.
+configs/experiment/  Experimental splits, domains, subjects, and modes.
+configs/model/       Model architecture choices and hyperparameters.
+configs/train/       Training recipes, optimizer settings, augmentation, and loss.
 ```
 
-Processed window datasets are stored under:
+Experiment names follow the project convention:
 
 ```text
-data/processed/imu/imu_windows/
-data/processed/bone_acc/bone_acc_windows/
+<sensor>_<ear>_<model>_<sentence_type>_<modes>
 ```
 
-Current clean processed datasets:
+Examples include:
 
 ```text
-data/processed/imu/imu_windows/imu_189
-data/processed/bone_acc/bone_acc_windows/bone_acc_1000
+imu_binaural_tcn_subjects36_nonsemantic_all
+imu_right_tcn_subjects36_nonsemantic_all
+imu_binaural_tcn_subjects36_nonsemantic_normal_whisper
 ```
 
-Each processed dataset contains `.pt` samples plus a `manifest.json`. Sample
-tensors use `[channels, time]` layout:
+## Source Package
+
+The tracked source package is under `src/silentspeechoe/`.
 
 ```text
-IMU:      [9, T] at 189 Hz
-bone_acc: [3, T] at 1000 Hz
+data/        Dataset classes, preprocessing utilities, labels, collation, and
+             IMU augmentation.
+evaluation/  Classification, authentication, attack, and plotting metrics.
+features/    Hand-crafted feature extraction helpers for IMU and bone-acc data.
+models/      Neural network definitions and model builders.
+training/    Training loop, losses, and optimization utilities.
+utils/       Checkpointing, logging, I/O, and seed helpers.
 ```
 
-## Preprocessing
+## Data Policy
 
-Create clean processed windows from `events.csv`:
+Tracked data is limited to metadata and lightweight documentation under
+`data/`.
 
-```bash
-python scripts/preprocess.py \
-  --imu-sample-rate 189 \
-  --bone-acc-sample-rate 1000 \
-  --overwrite
-```
+Raw recordings, processed tensors, model checkpoints, and experiment outputs are
+not tracked. This keeps the repository suitable for GitHub and makes the code
+reviewable without requiring the full local dataset.
 
-### IMU Augmentation
+The tracked metadata includes utterance-level event information such as subject,
+ear, session, sentence type, label, speaking mode, repeat index, and time window
+boundaries.
 
-The implementation lives in `src/silentspeechoe/data/imu_augmentation.py` and
-is wired into the IMU dataset loaders.
+## Models and Losses
 
-For training-time augmentation of preprocessed IMU windows, use:
+The model package contains compact research baselines for earable time-series
+experiments:
 
-```bash
-python scripts/train.py train=imu_left_tcn_augmented
-```
+- Temporal CNN / TCN encoders for raw or preprocessed sensor windows.
+- Feature MLP and CNN models for precomputed feature vectors.
+- LSTM and ResNet variants for temporal and feature baselines.
+- Feature-token Transformer variants for structured feature inputs.
 
-You can also override the block directly:
+The training package supports standard cross-entropy classification and
+ArcFace-style metric learning losses. ArcFace is used when the experiment needs
+an embedding space with stronger angular class separation.
 
-```bash
-python scripts/train.py \
-  train=imu_left_tcn \
-  train.augmentation.enabled=true \
-  train.augmentation.sample_prob=0.1 \
-  train.augmentation.rotation_prob=0.05 \
-  train.augmentation.rotation_max_degrees=10.0 \
-  train.augmentation.time_warp_prob=0.05 \
-  train.augmentation.time_warp_min_scale=0.9 \
-  train.augmentation.time_warp_max_scale=1.1 \
-  train.augmentation.scaling_prob=0.05 \
-  train.augmentation.scaling_min_scale=0.9 \
-  train.augmentation.scaling_max_scale=1.1 \
-  train.augmentation.gaussian_noise_prob=0.05 \
-  train.augmentation.gaussian_noise_min_ratio=0.01 \
-  train.augmentation.gaussian_noise_max_ratio=0.03
-```
-
-Recommended light settings:
-
-- sample gate: `p=0.1`
-- rotation: `p=0.05`, `±5°` to `±10°`
-- time warping: `p=0.05`, `0.9` to `1.1`
-- scaling: `p=0.05`, `0.9` to `1.1`
-- gaussian noise: `p=0.05`, `0.01` to `0.03` times per-channel std
-
-The augmenter keeps the original tensor in `x_original` before any change
-is applied, which is useful for debugging or audit checks.
-
-Start with small perturbations first. Too much noise can hurt silent-speech
-generalization and may raise FAR.
-
-## Models
-
-The temporal model module provides separate entry points for the two processed
-sensor types:
-
-```text
-BoneAccTemporalCNN  -> bone_acc windows, default 3 channels
-IMUTemporalCNN      -> IMU windows, default 9 channels
-BoneRawTCN          -> backward-compatible binaural bone_acc model, 6 channels
-```
-
-Hydra model configs include:
-
-```text
-configs/model/bone_acc_temporal_cnn.yaml
-configs/model/imu_temporal_cnn.yaml
-```
-
-## Quick Start
+## Development
 
 Install development dependencies:
 
@@ -239,7 +149,7 @@ Install development dependencies:
 make install-dev
 ```
 
-Run checks:
+Run the standard checks:
 
 ```bash
 make check
@@ -253,22 +163,12 @@ ruff format --check .
 pytest
 ```
 
-## Development Notes
+CI is intentionally lightweight and should not require GPU access, full dataset
+preprocessing, or complete training runs.
 
-- Keep the codebase simple, PyTorch-first, and research-oriented.
-- Do not commit raw data, processed tensors, checkpoints, logs, or secrets.
-- Use Hydra YAML configs for experiment settings.
-- Keep CI lightweight: lint, format check, and tests only.
-- GPU validation should remain optional/manual unless a dedicated GPU workflow
-  is explicitly added.
+## Project Status
 
-## Repository Layout
-
-```text
-configs/              Hydra experiment, data, model, and train configs
-scripts/              Preprocessing, feature, training, and evaluation entry points
-src/silentspeechoe/   Python package for data, features, models, training, evaluation
-tests/                Lightweight unit and scaffold tests
-data/                 Local data root, ignored for raw/processed artifacts
-.devcontainer/        Dev Container and Docker setup
-```
+ArticuEar is an active research codebase. The tracked files provide the reusable
+configuration, package code, tests, and metadata needed to reproduce and inspect
+the research workflow. Local experiment artifacts are deliberately kept outside
+Git tracking.

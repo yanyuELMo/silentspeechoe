@@ -56,10 +56,8 @@ scripts are intentionally excluded from version control.
 │   ├── model/
 │   └── train/
 ├── data/
-│   ├── README.md
-│   ├── instruction.txt
-│   ├── instruction2.txt
 │   └── metadata/
+│       └── events.csv
 ├── src/
 │   └── silentspeechoe/
 │       ├── config.py
@@ -116,8 +114,11 @@ utils/       Checkpointing, logging, I/O, and seed helpers.
 
 ## Data Policy
 
-Tracked data is limited to metadata and lightweight documentation under
-`data/`.
+Tracked data is limited to the utterance event metadata file:
+
+```text
+data/metadata/events.csv
+```
 
 Raw recordings, processed tensors, model checkpoints, and experiment outputs are
 not tracked. This keeps the repository suitable for GitHub and makes the code

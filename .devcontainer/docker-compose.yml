@@ -7,7 +7,13 @@ services:
     working_dir: /workspace/silentspeechoe
     volumes:
       - ..:/workspace/silentspeechoe:cached
+      - ${HOME}/.codex:/root/.codex
     environment:
+      HOME: /root
+      CODEX_HOME: /root/.codex
       PYTHONPATH: /workspace/silentspeechoe/src
-    shm_size: "8gb"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    gpus: all
+    shm_size: "12gb"
     tty: true

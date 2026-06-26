@@ -1,8 +1,10 @@
 """MFCC feature extraction for IMU sensor sequences.
 
-Converts each of the 9 IMU channels into 13 MFCCs, pools them with
-mean and standard deviation, and concatenates the result into a single
-fixed‑length vector of 234 dimensions (9 × 13 × 2).
+Converts each IMU channel into MFCC coefficients. The module supports two
+representations:
+
+* pooled fixed-length vectors for feature-based baselines;
+* time-preserving MFCC sequences for temporal models such as TCNs.
 
 Uses only NumPy / SciPy — no audio‑specific dependencies.
 """
@@ -200,6 +202,62 @@ def extract_imu_mfcc_features(
         features[c * per_channel_dim : (c + 1) * per_channel_dim] = feats
 
     return features
+
+
+def extract_imu_mfcc_sequence(
+    x: np.ndarray,
+    sample_rate: float = 200.0,
+    *,
+    n_mfcc: int = 13,
+    n_mels: int = 20,
+    frame_length: int = 50,
+    hop_length: int = 10,
+    fmin: float = 0.5,
+    fmax: float = 90.0,
+    n_fft: int | None = None,
+) -> np.ndarray:
+    """Extract a time-preserving MFCC sequence from an IMU window.
+
+    For each input channel, this computes ``[n_mfcc, num_frames]`` MFCCs.
+    The channel and coefficient dimensions are flattened into the TCN channel
+    axis, yielding ``[C * n_mfcc, num_frames]``.
+
+    Args:
+        x: Float32 array of shape ``[C, T]``.
+        sample_rate: Sample rate in Hz.
+        n_mfcc: Number of MFCC coefficients per channel.
+        n_mels: Mel filterbank channels.
+        frame_length: Frame length in samples.
+        hop_length: Hop length in samples.
+        fmin: Lowest mel frequency.
+        fmax: Highest mel frequency.
+        n_fft: FFT size.
+
+    Returns:
+        Float32 array of shape ``[C * n_mfcc, num_frames]``.
+    """
+    sequences = [
+        compute_mfcc(
+            x[c],
+            sample_rate=sample_rate,
+            n_mfcc=n_mfcc,
+            n_mels=n_mels,
+            frame_length=frame_length,
+            hop_length=hop_length,
+            fmin=fmin,
+            fmax=fmax,
+            n_fft=n_fft,
+        )
+        for c in range(x.shape[0])
+    ]
+    if not sequences:
+        return np.empty((0, 0), dtype=np.float32)
+    num_frames = min(seq.shape[1] for seq in sequences)
+    if num_frames == 0:
+        return np.zeros((x.shape[0] * n_mfcc, 1), dtype=np.float32)
+    return np.concatenate([seq[:, :num_frames] for seq in sequences], axis=0).astype(
+        np.float32
+    )
 
 
 def feature_dim(

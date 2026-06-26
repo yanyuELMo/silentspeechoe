@@ -1,0 +1,11 @@
+name: imu_temporal_cnn_binaural
+in_channels: 234
+hidden_channels: 96
+num_classes: 36
+kernel_size: 5
+dilations:
+  - 1
+  - 2
+  - 4
+  - 8
+dropout: 0.3

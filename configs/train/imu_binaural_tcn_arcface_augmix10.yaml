@@ -1,0 +1,42 @@
+# @package _global_
+
+train:
+  batch_size: 64
+  max_epochs: 50
+  num_epochs: 50
+  learning_rate: 0.0007
+  weight_decay: 0.0001
+  num_workers: 8
+  device: cuda
+  name: ${experiment.name}_arcface_augmix10
+  output_dir: outputs/runs/augmented/tcn/domain_ablation/${train.name}
+  seed: 42
+  input_type: sensor_window_processed
+  processed_dir: imu/imu_windows/imu_189_binaural
+  preload_windows: true
+  augmented_mix_ratio: 0.1
+  augmented_mix_seed: 42
+  sides:
+    - binaural
+  augmentation:
+    enabled: true
+    sample_prob: 1.0
+    rotation_prob: 0.05
+    rotation_max_degrees: 5.0
+    time_warp_prob: 0.05
+    time_warp_min_scale: 0.95
+    time_warp_max_scale: 1.05
+    scaling_prob: 0.05
+    scaling_min_scale: 0.95
+    scaling_max_scale: 1.05
+    gaussian_noise_prob: 0.05
+    gaussian_noise_min_ratio: 0.01
+    gaussian_noise_max_ratio: 0.03
+  loss:
+    name: arcface
+    margin: 0.5
+    scale: 30.0
+
+hydra:
+  run:
+    dir: outputs/runs/augmented/tcn/domain_ablation/${train.name}

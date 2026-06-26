@@ -1,0 +1,14 @@
+name: whisper_to_silent
+train_domains:
+  - whisper
+eval_domain: silent
+task: closed_set_sentence_classification
+source_domains:
+  - whisper
+target_domains:
+  - silent
+source_sentence_types: []
+target_sentence_types: []
+validation_subjects: []
+train_subjects: []
+target_subjects: []

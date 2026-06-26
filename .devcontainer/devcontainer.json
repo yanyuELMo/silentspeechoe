@@ -3,7 +3,16 @@
   "dockerComposeFile": "docker-compose.yml",
   "service": "dev",
   "workspaceFolder": "/workspace/silentspeechoe",
+  "remoteUser": "root",
   "shutdownAction": "stopCompose",
+  "containerEnv": {
+    "HOME": "/root",
+    "CODEX_HOME": "/root/.codex"
+  },
+  "remoteEnv": {
+    "HOME": "/root",
+    "CODEX_HOME": "/root/.codex"
+  },
   "postCreateCommand": "python3 -m pip install --upgrade pip && python3 -m pip install -r .devcontainer/requirements-dev.txt -e .",
   "customizations": {
     "vscode": {

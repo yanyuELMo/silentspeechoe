@@ -1,0 +1,10 @@
+# CNN model config for reshaped binaural IMU feature vectors
+name: imu_binaural_feature_cnn
+in_channels: 36
+hidden_channels: 64
+embedding_dim: 512
+num_classes: 36
+kernel_size: 5
+num_conv_blocks: 3
+dropout: 0.3
+return_features_for_training: false

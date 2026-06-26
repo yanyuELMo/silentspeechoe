@@ -9,20 +9,27 @@ import pandas as pd
 import pytest
 import torch
 
+from silentspeechoe.data.imu_augmentation import (
+    IMUAugmentationConfig,
+    IMUWindowAugmenter,
+)
 from silentspeechoe.data.imu_preprocessing import (
     IMU_CHANNELS,
     IMUDataset,
     PrecomputedIMUDataset,
     build_imu_records,
     clean_imu_timestamps,
+    condition_resampled_imu_window,
     find_imu_path,
     imu_pad_collate,
     load_imu,
+    median_mad_despike_imu_window,
     preprocess_imu_window,
     resample_imu_window,
     slice_imu_window,
     slice_imu_window_with_time,
 )
+from silentspeechoe.data.subject_filtering import filter_subject_dataframe
 
 # ---------------------------------------------------------------------------
 # Synthetic helpers
@@ -248,6 +255,36 @@ class TestResampleIMUWindow:
 
 
 # ---------------------------------------------------------------------------
+# post-resampling conditioning
+# ---------------------------------------------------------------------------
+
+
+class TestIMUConditioning:
+    def test_median_mad_despike_clips_only_large_spike(self):
+        x = np.zeros((9, 101), dtype=np.float32)
+        x[0] = np.linspace(-1.0, 1.0, 101, dtype=np.float32)
+        x[0, 50] = 100.0
+
+        out = median_mad_despike_imu_window(x, threshold=8.0)
+
+        assert out.shape == x.shape
+        assert out.dtype == np.float32
+        assert out[0, 50] < 100.0
+        assert np.allclose(out[1:], x[1:])
+
+    def test_conditioning_outputs_zero_mean_unit_std(self):
+        rng = np.random.default_rng(7)
+        x = rng.normal(loc=10.0, scale=2.0, size=(9, 300)).astype(np.float32)
+
+        out = condition_resampled_imu_window(x)
+
+        assert out.shape == x.shape
+        assert np.all(np.isfinite(out))
+        assert np.allclose(out.mean(axis=1), 0.0, atol=1e-5)
+        assert np.allclose(out.std(axis=1), 1.0, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
 # preprocess_imu_window (end-to-end with temp files)
 # ---------------------------------------------------------------------------
 
@@ -317,6 +354,27 @@ class TestPreprocessIMUWindow:
             assert abs(float(x_norm[c].mean())) < 0.3
             assert 0.5 < float(x_norm[c].std()) < 1.5
 
+    def test_full_conditioning_options(self, tmp_path):
+        path = tmp_path / "test__imu.csv"
+        df = _synthetic_imu_df(800)
+        df.to_csv(path, index=False)
+
+        x, meta = preprocess_imu_window(
+            path,
+            0.5,
+            2.5,
+            target_sample_rate=200.0,
+            despike=True,
+            remove_dc=True,
+            normalize=True,
+        )
+
+        assert meta["despike"] is True
+        assert meta["remove_dc"] is True
+        assert meta["normalize"] is True
+        assert np.allclose(x.mean(axis=1), 0.0, atol=1e-5)
+        assert np.allclose(x.std(axis=1), 1.0, atol=1e-5)
+
 
 # ---------------------------------------------------------------------------
 # IMUDataset
@@ -375,6 +433,23 @@ class TestIMUDataset:
         assert item["side"] == "left"
         assert item["sentence_id"] == "nonsem_001"
         assert item["repeat_id"] == 1
+
+    def test_getitem_preserves_original_when_augmented(self, tmp_path):
+        records = self._make_records(tmp_path, 1)
+        config = IMUAugmentationConfig(
+            enabled=True,
+            sample_prob=1.0,
+            rotation_prob=0.0,
+            time_warp_prob=0.0,
+            scaling_prob=1.0,
+            scaling_min_scale=2.0,
+            scaling_max_scale=2.0,
+            gaussian_noise_prob=0.0,
+        )
+        ds = IMUDataset(records, augmenter=IMUWindowAugmenter(config))
+        item = ds[0]
+        assert "x_original" in item
+        assert torch.allclose(item["x_original"] * 2.0, item["x"])
 
     def test_empty_window_record(self, tmp_path):
         """Record with window outside data range should return [9, 0]."""
@@ -563,6 +638,17 @@ class TestBuildIMURecords:
                 sides=["left"],
             )
 
+    def test_dataframe_filter_excludes_subjects_26_and_51(self):
+        """Global subject filtering removes excluded users from event tables."""
+        df = pd.DataFrame(
+            {
+                "subject_id": ["sub_25", "26", "sub_51", "sub_52"],
+                "event_id": [1, 2, 3, 4],
+            }
+        )
+        filtered = filter_subject_dataframe(df)
+        assert filtered["subject_id"].tolist() == ["sub_25", "sub_52"]
+
 
 # ---------------------------------------------------------------------------
 # PrecomputedIMUDataset
@@ -712,6 +798,27 @@ class TestPrecomputedIMUDataset:
         item = ds[0]
         assert item["x"].shape[0] == 9
 
+    def test_getitem_preserves_original_when_augmented(self, tmp_path):
+        manifest_path, feat_dir = self._make_manifest_and_files(tmp_path, 1)
+        config = IMUAugmentationConfig(
+            enabled=True,
+            sample_prob=1.0,
+            rotation_prob=0.0,
+            time_warp_prob=0.0,
+            scaling_prob=1.0,
+            scaling_min_scale=2.0,
+            scaling_max_scale=2.0,
+            gaussian_noise_prob=0.0,
+        )
+        ds = PrecomputedIMUDataset(
+            manifest_path,
+            feat_dir,
+            augmenter=IMUWindowAugmenter(config),
+        )
+        item = ds[0]
+        assert "x_original" in item
+        assert torch.allclose(item["x_original"] * 2.0, item["x"])
+
     def test_channel_indices_collate(self, tmp_path):
         """Padding should work with reduced channels."""
         manifest_path, feat_dir = self._make_manifest_and_files(tmp_path, 4)
@@ -730,3 +837,22 @@ class TestPrecomputedIMUDataset:
         assert ds.num_channels == 1
         item = ds[0]
         assert item["x"].shape[0] == 1
+
+    def test_excluded_subjects_are_filtered_from_manifest(self, tmp_path):
+        """Excluded subjects should never appear in precomputed datasets."""
+        import json
+
+        manifest_path, feat_dir = self._make_manifest_and_files(tmp_path, 4)
+        with manifest_path.open("r") as f:
+            manifest = json.load(f)
+
+        manifest["records"][0]["subject_id"] = "sub_26"
+        manifest["records"][1]["subject_id"] = "sub_51"
+        with manifest_path.open("w") as f:
+            json.dump(manifest, f)
+
+        ds = PrecomputedIMUDataset(manifest_path, feat_dir)
+        assert len(ds) == 2
+        assert all(
+            item["subject_id"] not in {"sub_26", "sub_51"} for item in ds.records
+        )

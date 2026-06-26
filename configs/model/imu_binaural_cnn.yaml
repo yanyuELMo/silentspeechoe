@@ -1,0 +1,9 @@
+# CNN model config for binaural 18‑channel IMU raw windows
+name: imu_binaural_cnn
+in_channels: 18
+hidden_channels: 64
+num_classes: 36
+kernel_size: 7
+num_conv_blocks: 4
+dropout: 0.2
+return_features_for_training: false

@@ -17,16 +17,22 @@ from torch.utils.data import Dataset
 from .labels import EVENT_FIELDS, parse_all_labels
 from .preprocessing import stack_binaural_bone_acc
 from .sensor_io import find_bone_acc_path, load_bone_acc, slice_bone_acc_window
+from .subject_filtering import (
+    filter_subject_dataframe,
+    filter_subject_records,
+    is_excluded_subject_id,
+)
 
 logger = logging.getLogger(__name__)
 
 # Validation subjects for subject‑holdout split.
 _VAL_SUBJECTS = frozenset({"07", "10", "13", "17"})
 
-# Columns used to pair left and right events from events.csv.
+# Columns used to strictly pair left and right events from events.csv.
 _PAIRING_KEY = [
     "subject_id",
     "event_id",
+    "sentence_type",
     "sentence_id",
     "label_id",
     "domain",
@@ -88,6 +94,10 @@ def build_binaural_records(
         key = (
             rec["subject_id"],
             rec["event_id"],
+            rec["sentence_id"],
+            rec["speech_mode"],
+            rec["repeat_id"],
+            rec["subset"],
         )
         if rec["side"] == "left":
             left_index[key] = rec
@@ -103,6 +113,9 @@ def build_binaural_records(
         right_rec = right_index[key]
         subject_id = left_rec["subject_id"]
         subset = left_rec["subset"]
+
+        if is_excluded_subject_id(subject_id):
+            continue
 
         # Check raw availability for both sides
         if not _subject_has_raw(subject_id, "left", subset, base):
@@ -219,6 +232,7 @@ def build_binaural_event_records(
 
     df = pd.read_csv(events_path)
     _validate_event_columns(df)
+    df = filter_subject_dataframe(df)
 
     left_df = df[df["ear"] == "left"].copy()
     right_df = df[df["ear"] == "right"].copy()
@@ -235,8 +249,8 @@ def build_binaural_event_records(
 
     for _, row in merged.iterrows():
         subject_id = str(row["subject_id"])
-        left_sentence_type = str(row["sentence_type_left"])
-        right_sentence_type = str(row["sentence_type_right"])
+        left_sentence_type = str(row.get("sentence_type_left", row["sentence_type"]))
+        right_sentence_type = str(row.get("sentence_type_right", row["sentence_type"]))
 
         left_path = _bone_acc_path_from_event(
             raw_dir,
@@ -336,7 +350,7 @@ class BoneBinauralDataset(Dataset):
         padding_sec: float = 0.0,
         base_dir: str | Path = ".",
     ):
-        self.records = records
+        self.records = filter_subject_records(records)
         self.padding_sec = padding_sec
         self.base_dir = Path(base_dir)
 
@@ -419,7 +433,7 @@ class BoneBinauralFeatureDataset(Dataset):
         frame_ms: float = 50.0,
         hop_ms: float = 10.0,
     ):
-        self.records = records
+        self.records = filter_subject_records(records)
         self.frame_ms = frame_ms
         self.hop_ms = hop_ms
 
@@ -512,7 +526,7 @@ class BoneBinauralPrecomputedDataset(Dataset):
             manifest_data = json.load(f)
 
         self.features_dir = features_dir
-        self.records = manifest_data["records"]
+        self.records = filter_subject_records(manifest_data["records"])
 
         # Store feature params for reference (useful for checks).
         self.frame_ms = float(manifest_data.get("frame_ms", 50.0))
@@ -566,7 +580,7 @@ class BoneRawPrecomputedDataset(Dataset):
             manifest_data = json.load(f)
 
         self.features_dir = features_dir
-        self.records = manifest_data["records"]
+        self.records = filter_subject_records(manifest_data["records"])
 
     def __len__(self) -> int:
         return len(self.records)

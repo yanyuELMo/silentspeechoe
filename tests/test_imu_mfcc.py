@@ -8,6 +8,7 @@ from silentspeechoe.features.imu_mfcc import (
     _mel_filterbank,
     compute_mfcc,
     extract_imu_mfcc_features,
+    extract_imu_mfcc_sequence,
     feature_dim,
     hz_to_mel,
     mel_to_hz,
@@ -112,6 +113,28 @@ class TestExtractIMUMFCC:
         feats = extract_imu_mfcc_features(x, sample_rate=200.0, frame_length=50)
         assert feats.shape == (234,)
         assert np.all(np.isfinite(feats))
+
+
+class TestExtractIMUMFCCSequence:
+    def test_preserves_mfcc_time_axis(self):
+        rng = np.random.default_rng(11)
+        x = rng.normal(0, 1, (18, 1890)).astype(np.float32)
+        seq = extract_imu_mfcc_sequence(
+            x,
+            sample_rate=189.0,
+            frame_length=47,
+            hop_length=9,
+        )
+        expected_frames = (1890 - 47) // 9 + 1
+        assert seq.shape == (18 * 13, expected_frames)
+        assert seq.dtype == np.float32
+        assert np.all(np.isfinite(seq))
+
+    def test_short_signal_returns_one_zero_frame(self):
+        x = np.ones((18, 10), dtype=np.float32)
+        seq = extract_imu_mfcc_sequence(x, sample_rate=189.0, frame_length=47)
+        assert seq.shape == (18 * 13, 1)
+        assert np.all(seq == 0.0)
 
 
 class TestFeatureDim:

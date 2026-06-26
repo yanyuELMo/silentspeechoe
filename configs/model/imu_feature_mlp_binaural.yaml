@@ -1,0 +1,8 @@
+name: imu_feature_mlp_binaural
+in_features: 1296
+hidden_features:
+  - 1024
+  - 512
+num_classes: 36
+dropout: 0.3
+use_batch_norm: true

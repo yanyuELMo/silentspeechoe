@@ -1,7 +1,3 @@
-"""Data package placeholders.
-
-TODO:
-    Organize dataset, preprocessing, and collate utilities here.
-"""
+"""Data package for preprocessing, datasets, and augmentation utilities."""
 
 from __future__ import annotations

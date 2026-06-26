@@ -18,6 +18,12 @@ from silentspeechoe.features.bone_acc import (
     extract_single_ear_bone_features,
     frame_signal,
 )
+from silentspeechoe.features.imu_mfcc import (
+    compute_mfcc,
+    extract_imu_mfcc_features,
+    extract_imu_mfcc_sequence,
+    feature_dim,
+)
 
 __all__ = [
     "DEFAULT_BANDS",
@@ -25,9 +31,13 @@ __all__ = [
     "batched_zscore",
     "compute_delta",
     "compute_frame_spectrum_features",
+    "compute_mfcc",
     "default_bone_feature_names",
     "estimate_sampling_rate",
     "extract_binaural_bone_features",
+    "extract_imu_mfcc_features",
+    "extract_imu_mfcc_sequence",
     "extract_single_ear_bone_features",
+    "feature_dim",
     "frame_signal",
 ]

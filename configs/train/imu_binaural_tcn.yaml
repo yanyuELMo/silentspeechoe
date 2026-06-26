@@ -1,0 +1,17 @@
+batch_size: 32
+max_epochs: 50
+num_epochs: 50
+learning_rate: 0.001
+num_workers: 0
+device: cuda
+name: imu_binaural_tcn_subjects36_nonsemantic_all
+seed: 42
+input_type: binaural_sensor_window_processed
+processed_dir: imu/imu_windows/imu_189
+preload_windows: true
+sides:
+  - left
+  - right
+hydra:
+  run:
+    dir: outputs/runs/imu/clean/${train.name}

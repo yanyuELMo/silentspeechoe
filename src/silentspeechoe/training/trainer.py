@@ -22,6 +22,13 @@ def _copy_model_state(model: nn.Module) -> dict[str, torch.Tensor]:
     }
 
 
+def _copy_module_state(module: nn.Module) -> dict[str, torch.Tensor]:
+    """Copy a module state dict to CPU."""
+    return {
+        key: value.detach().cpu().clone() for key, value in module.state_dict().items()
+    }
+
+
 def _forward_train(
     model: nn.Module,
     x: torch.Tensor,
@@ -32,6 +39,25 @@ def _forward_train(
     if bool(getattr(model, "requires_labels_for_training", False)):
         return model(x, lengths=lengths, labels=y)
     return model(x, lengths=lengths)
+
+
+def _loss_requires_features(criterion: nn.Module) -> bool:
+    """Return whether the criterion should receive encoder embeddings."""
+    return bool(getattr(criterion, "requires_features", False))
+
+
+def _forward_features(
+    model: nn.Module,
+    x: torch.Tensor,
+    lengths: torch.Tensor,
+) -> torch.Tensor:
+    """Extract pre-classifier embeddings for embedding-based losses."""
+    if not hasattr(model, "extract_features"):
+        raise TypeError(
+            f"{model.__class__.__name__} does not provide extract_features(), "
+            "which is required by this loss."
+        )
+    return model.extract_features(x, lengths=lengths)
 
 
 def train_one_epoch(
@@ -52,8 +78,12 @@ def train_one_epoch(
         lengths = batch["lengths"].to(device)
 
         optimizer.zero_grad()
-        logits = _forward_train(model, x, lengths, y)
-        loss = criterion(logits, y)
+        if _loss_requires_features(criterion):
+            features = _forward_features(model, x, lengths)
+            loss = criterion(features, y)
+        else:
+            logits = _forward_train(model, x, lengths, y)
+            loss = criterion(logits, y)
         loss.backward()
         optimizer.step()
 
@@ -88,8 +118,16 @@ def validate(
         lengths = batch["lengths"].to(device)
         groups = batch["domain"]  # list of str
 
-        logits = model(x, lengths=lengths)
-        loss = criterion(logits, y)
+        if _loss_requires_features(criterion):
+            features = _forward_features(model, x, lengths)
+            loss = criterion(features, y)
+            if hasattr(criterion, "predict_logits"):
+                logits = criterion.predict_logits(features)
+            else:
+                logits = features
+        else:
+            logits = model(x, lengths=lengths)
+            loss = criterion(logits, y)
 
         total_loss += float(loss.item())
         num_batches += 1
@@ -152,6 +190,7 @@ def run_training(
                 "epoch": epoch,
                 "value": val_loss,
                 "model_state_dict": _copy_model_state(model),
+                "criterion_state_dict": _copy_module_state(criterion),
                 "optimizer_state_dict": deepcopy(optimizer.state_dict()),
                 "val_metrics": val_metrics,
             }
@@ -160,6 +199,7 @@ def run_training(
                 "epoch": epoch,
                 "value": val_accuracy,
                 "model_state_dict": _copy_model_state(model),
+                "criterion_state_dict": _copy_module_state(criterion),
                 "optimizer_state_dict": deepcopy(optimizer.state_dict()),
                 "val_metrics": val_metrics,
             }

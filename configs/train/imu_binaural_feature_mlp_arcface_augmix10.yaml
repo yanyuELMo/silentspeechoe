@@ -1,0 +1,31 @@
+# @package _global_
+
+train:
+  batch_size: 128
+  max_epochs: 50
+  num_epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_workers: 4
+  device: cuda
+  name: imu_binaural_mlp_subjects36_nonsemantic_all_feature_arcface_augmix10
+  output_dir: outputs/runs/augmented/${train.name}
+  seed: 42
+  input_type: imu_feature_processed
+  processed_dir: imu/features/original/imu_temporal_envelope_binaural_lrdiff_189
+  target_processed_dir: imu/features/original/imu_temporal_envelope_binaural_lrdiff_189
+  augmented_processed_dir: imu/features/augmented/imu_temporal_envelope_binaural_lrdiff_189_augmented
+  augmented_mix_ratio: 0.1
+  augmented_mix_seed: 42
+  standardize_features: true
+  sides:
+    - left
+    - right
+  loss:
+    name: arcface
+    margin: 0.5
+    scale: 30.0
+
+hydra:
+  run:
+    dir: outputs/runs/augmented/${train.name}

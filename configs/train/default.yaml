@@ -1,0 +1,10 @@
+batch_size: 32
+max_epochs: 50
+num_epochs: 50
+learning_rate: 0.001
+num_workers: 4
+device: cpu
+name: default
+seed: 42
+input_type: feature_bone
+processed_dir: features/bone_binaural

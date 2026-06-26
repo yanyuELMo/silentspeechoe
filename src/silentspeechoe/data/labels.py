@@ -15,6 +15,8 @@ from typing import Any
 
 import pandas as pd
 
+from .subject_filtering import filter_subject_records, is_excluded_subject_id
+
 logger = logging.getLogger(__name__)
 
 _METADATA = Path("data/metadata")
@@ -313,6 +315,8 @@ def parse_label_events(
 
         for sheet_name in sorted(set(nw_sheets) & set(silent_sheets)):
             subject_id = f"sub_{sheet_name}"
+            if is_excluded_subject_id(subject_id):
+                continue
             events.extend(
                 _iter_event_slots(
                     nw_sheets[sheet_name],
@@ -346,6 +350,7 @@ def write_events_csv(
     records = events
     if records is None:
         records = parse_label_events(base, skip_missing_raw=skip_missing_raw)
+    records = filter_subject_records(records)
 
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=EVENT_FIELDS)

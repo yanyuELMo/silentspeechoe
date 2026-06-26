@@ -6,13 +6,33 @@ import numpy as np
 import pytest
 
 from silentspeechoe.evaluation.metrics import (
+    compute_attack_success_rate as compat_compute_attack_success_rate,
+)
+from silentspeechoe.evaluation.metrics import (
+    compute_authentication_metrics as compat_compute_authentication_metrics,
+)
+from silentspeechoe.evaluation.metrics_attack import compute_attack_success_rate
+from silentspeechoe.evaluation.metrics_authentication import (
     compute_authentication_metrics,
+)
+from silentspeechoe.evaluation.metrics_identification import (
     compute_classification_metrics,
+    compute_dir_at_fpir_leave_one_user_out,
     compute_grouped_classification_metrics,
 )
 
 NUM_CLASSES = 36
 NUM_SAMPLES = 108  # 3 samples per class to guarantee macro-F1 coverage
+
+
+def test_compat_metrics_module_reexports_authentication_metrics():
+    """The old metrics module should keep working while code migrates."""
+    assert compat_compute_authentication_metrics is compute_authentication_metrics
+
+
+def test_compat_metrics_module_reexports_attack_metrics():
+    """The compatibility module should expose attack metrics."""
+    assert compat_compute_attack_success_rate is compute_attack_success_rate
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +135,10 @@ def test_perfect_predictions_all_one(perfect_preds):
     """All metrics should be 1.0 when predictions are perfect."""
     y_true, y_pred, y_score = perfect_preds
     metrics = compute_classification_metrics(y_true, y_pred, y_score)
+    assert metrics["top1_accuracy"] == 1.0
     assert metrics["accuracy"] == 1.0
     assert metrics["macro_f1"] == 1.0
+    assert metrics["dir_at_fpir_0p1pct"] == 1.0
     assert metrics["balanced_accuracy"] == 1.0
     assert metrics["top3_accuracy"] == 1.0
 
@@ -125,6 +147,7 @@ def test_wrong_predictions_low_metrics(wrong_preds):
     """Completely wrong predictions should yield low accuracy and f1."""
     y_true, y_pred, y_score = wrong_preds
     metrics = compute_classification_metrics(y_true, y_pred, y_score)
+    assert metrics["top1_accuracy"] < 0.2
     assert metrics["accuracy"] < 0.2
     assert metrics["macro_f1"] < 0.2
     # balanced accuracy is also low for systematic wrong predictions
@@ -145,21 +168,34 @@ def test_top3_accuracy_catches_correct_in_top3(top3_preds):
 
 
 def test_returns_expected_keys():
-    """Returned dict should have exactly the four expected keys."""
+    """Returned dict should include compact and compatibility metrics."""
     rng = np.random.default_rng(0)
     y_true = rng.integers(0, NUM_CLASSES, size=10)
     y_pred = y_true.copy()
     y_score = np.zeros((10, NUM_CLASSES))
     y_score[np.arange(10), y_true] = 1.0
     result = compute_classification_metrics(y_true, y_pred, y_score)
-    assert set(result.keys()) == {
+    assert {
+        "top1_accuracy",
         "accuracy",
         "macro_f1",
+        "dir_at_fpir_0p1pct",
+        "dir_at_fpir_target",
+        "fpir_at_dir_threshold",
+        "fpir_target",
+        "open_set_identification",
         "balanced_accuracy",
         "top3_accuracy",
-    }
-    for v in result.values():
-        assert isinstance(v, float)
+    }.issubset(result)
+    for key in (
+        "top1_accuracy",
+        "accuracy",
+        "macro_f1",
+        "dir_at_fpir_0p1pct",
+        "balanced_accuracy",
+        "top3_accuracy",
+    ):
+        assert isinstance(result[key], float)
 
 
 # ---------------------------------------------------------------------------
@@ -197,11 +233,25 @@ def test_grouped_metrics_structure(grouped_data):
     # Each speech mode should appear
     assert set(result["by_group"].keys()) == {"normal", "whisper", "silent"}
     # Overall should have all metric keys
-    for key in ("accuracy", "macro_f1", "balanced_accuracy", "top3_accuracy"):
+    for key in (
+        "top1_accuracy",
+        "accuracy",
+        "macro_f1",
+        "dir_at_fpir_0p1pct",
+        "balanced_accuracy",
+        "top3_accuracy",
+    ):
         assert key in result["overall"]
     # Each group should have all metric keys
     for mode in ("normal", "whisper", "silent"):
-        for key in ("accuracy", "macro_f1", "balanced_accuracy", "top3_accuracy"):
+        for key in (
+            "top1_accuracy",
+            "accuracy",
+            "macro_f1",
+            "dir_at_fpir_0p1pct",
+            "balanced_accuracy",
+            "top3_accuracy",
+        ):
             assert key in result["by_group"][mode]
 
 
@@ -209,11 +259,25 @@ def test_grouped_metrics_perfect(grouped_data):
     """Grouped metrics with perfect predictions should be all 1.0 everywhere."""
     y_true, y_pred, y_score, groups = grouped_data
     result = compute_grouped_classification_metrics(y_true, y_pred, y_score, groups)
-    for val in result["overall"].values():
-        assert val == 1.0
+    for key in (
+        "top1_accuracy",
+        "accuracy",
+        "macro_f1",
+        "dir_at_fpir_0p1pct",
+        "balanced_accuracy",
+        "top3_accuracy",
+    ):
+        assert result["overall"][key] == 1.0
     for mode_metrics in result["by_group"].values():
-        for val in mode_metrics.values():
-            assert val == 1.0
+        for key in (
+            "top1_accuracy",
+            "accuracy",
+            "macro_f1",
+            "dir_at_fpir_0p1pct",
+            "balanced_accuracy",
+            "top3_accuracy",
+        ):
+            assert mode_metrics[key] == 1.0
 
 
 def test_grouped_metrics_with_extra_group():
@@ -240,6 +304,50 @@ def test_single_sample_input_is_valid():
 
     assert result["accuracy"] == 1.0
     assert result["top3_accuracy"] == 1.0
+    assert np.isnan(result["dir_at_fpir_0p1pct"])
+
+
+def test_dir_at_fpir_leave_one_user_out_perfect():
+    """DIR@FPIR should use each subject once as the unknown identity."""
+    y_true = np.repeat(np.arange(4), 3)
+    y_score = np.full((y_true.shape[0], 4), -10.0, dtype=np.float32)
+    y_score[np.arange(y_true.shape[0]), y_true] = 10.0
+
+    result = compute_dir_at_fpir_leave_one_user_out(
+        y_true,
+        y_score,
+        fpir_target=0.001,
+    )
+
+    assert result["dir"] == 1.0
+    assert result["fpir"] == 0.0
+    assert result["num_folds"] == 4.0
+    assert {fold["unknown_label"] for fold in result["folds"]} == {0, 1, 2, 3}
+
+
+def test_dir_at_fpir_leave_one_user_out_rejects_high_unknown_scores():
+    """A high unknown score should force a stricter threshold in its fold."""
+    y_true = np.array([0, 0, 1, 1, 2, 2])
+    y_score = np.array(
+        [
+            [0.8, 0.2, 0.1],
+            [0.7, 0.3, 0.2],
+            [0.2, 0.8, 0.1],
+            [0.3, 0.7, 0.2],
+            [0.95, 0.9, 0.1],  # class 2 looks like enrolled classes when unknown
+            [0.96, 0.85, 0.1],
+        ],
+        dtype=np.float32,
+    )
+
+    result = compute_dir_at_fpir_leave_one_user_out(
+        y_true,
+        y_score,
+        fpir_target=0.001,
+    )
+
+    assert result["fpir"] == 0.0
+    assert 0.0 <= result["dir"] < 1.0
 
 
 def test_balanced_accuracy_uses_fixed_class_set():
@@ -281,12 +389,15 @@ def test_authentication_metrics_perfect_one_vs_all():
 
     result = compute_authentication_metrics(y_true, y_score, top_k=2)
 
+    assert result["top1_accuracy"] == 1.0
     assert result["accuracy"] == 1.0
     assert result["macro_f1"] == 1.0
+    assert result["dir_at_fpir_0p1pct"] == 1.0
     assert result["balanced_accuracy"] == 1.0
     assert result["top3_accuracy"] == 1.0
     assert result["roc_auc"] == 1.0
     assert result["eer"] == 0.0
+    assert result["authentication_summary"] == {"eer": 0.0, "roc_auc": 1.0}
     assert result["far"] == 0.0
     assert result["frr"] == 0.0
     assert result["frr_at_far_1pct"] == 0.0
@@ -353,6 +464,74 @@ def test_authentication_metrics_custom_far_target():
     assert result["authentication"]["far_target"] == 0.05
     assert result["frr_at_far_target"] == 0.0
     assert result["far_at_far_target"] <= 0.05
+
+
+# ---------------------------------------------------------------------------
+# Attack metrics
+# ---------------------------------------------------------------------------
+
+
+def test_attack_success_rate_uses_best_of_attempt_budget():
+    """ASR should succeed when any attempt within the budget crosses threshold."""
+    scores = np.array(
+        [
+            0.1,
+            0.2,
+            0.9,  # target u0, trial t0 succeeds only when A >= 3
+            0.8,
+            0.1,
+            0.1,  # target u0, trial t1 succeeds already at A = 1
+            0.2,
+            0.3,
+            0.4,  # target u1, trial t0 never succeeds
+            0.1,
+            0.7,
+            0.2,  # target u1, trial t1 succeeds when A >= 3
+        ],
+        dtype=np.float32,
+    )
+    target_ids = np.array(["u0"] * 6 + ["u1"] * 6)
+    trial_ids = np.array(["t0"] * 3 + ["t1"] * 3 + ["t0"] * 3 + ["t1"] * 3)
+    thresholds = {"u0": 0.75, "u1": 0.65}
+
+    result = compute_attack_success_rate(
+        scores,
+        target_ids,
+        trial_ids,
+        thresholds,
+        attempt_budgets=(1, 3),
+    )
+
+    assert result["by_target"]["u0"]["1"]["asr"] == 0.5
+    assert result["by_target"]["u0"]["3"]["asr"] == 1.0
+    assert result["by_target"]["u1"]["1"]["asr"] == 0.0
+    assert result["by_target"]["u1"]["3"]["asr"] == 0.5
+    assert result["overall"]["1"]["asr"] == 0.25
+    assert result["overall"]["3"]["asr"] == 0.75
+
+
+def test_attack_success_rate_reports_attacker_and_group_breakdowns():
+    """Optional attacker and condition labels should produce breakdowns."""
+    scores = np.array([0.9, 0.1, 0.2, 0.8], dtype=np.float32)
+    target_ids = np.array(["target", "target", "target", "target"])
+    trial_ids = np.array(["a_trial", "a_trial", "b_trial", "b_trial"])
+    attackers = np.array(["attacker_a", "attacker_a", "attacker_b", "attacker_b"])
+    groups = np.array(["normal", "normal", "silent", "silent"])
+
+    result = compute_attack_success_rate(
+        scores,
+        target_ids,
+        trial_ids,
+        {"target": 0.85},
+        attempt_budgets=(1, 2),
+        attack_subject_ids=attackers,
+        groups=groups,
+    )
+
+    assert result["by_attacker"]["attacker_a"]["overall"]["1"]["asr"] == 1.0
+    assert result["by_attacker"]["attacker_b"]["overall"]["1"]["asr"] == 0.0
+    assert result["by_group"]["normal"]["overall"]["1"]["asr"] == 1.0
+    assert result["by_group"]["silent"]["overall"]["2"]["asr"] == 0.0
 
 
 # ---------------------------------------------------------------------------

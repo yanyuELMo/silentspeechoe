@@ -1,0 +1,11 @@
+raw_root: data/raw
+processed_root: data/processed
+metadata_file: data/metadata/events.csv
+
+imu:
+  sample_rate: 189
+  window_dir: data/processed/imu/imu_windows/imu_189
+
+bone_acc:
+  sample_rate: 1000
+  window_dir: data/processed/bone_acc/bone_acc_windows/bone_acc_1000

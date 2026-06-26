@@ -1,0 +1,92 @@
+name: imu_binaural_tcn_subjects36_nonsemantic_whisper_silent
+train_domains:
+  - whisper
+  - silent
+eval_domain: all
+task: subject_identification
+source_domains:
+  - whisper
+  - silent
+target_domains:
+  - normal
+  - whisper
+  - silent
+source_sentence_types:
+  - non_semantic
+target_sentence_types:
+  - semantic
+validation_subjects: []
+train_subjects:
+  - sub_00
+  - sub_01
+  - sub_03
+  - sub_05
+  - sub_06
+  - sub_07
+  - sub_08
+  - sub_09
+  - sub_10
+  - sub_11
+  - sub_12
+  - sub_13
+  - sub_14
+  - sub_15
+  - sub_17
+  - sub_18
+  - sub_19
+  - sub_20
+  - sub_21
+  - sub_22
+  - sub_23
+  - sub_24
+  - sub_25
+  - sub_29
+  - sub_31
+  - sub_32
+  - sub_33
+  - sub_34
+  - sub_36
+  - sub_44
+  - sub_50
+  - sub_52
+  - sub_53
+  - sub_55
+  - sub_56
+  - sub_57
+target_subjects:
+  - sub_00
+  - sub_01
+  - sub_03
+  - sub_05
+  - sub_06
+  - sub_07
+  - sub_08
+  - sub_09
+  - sub_10
+  - sub_11
+  - sub_12
+  - sub_13
+  - sub_14
+  - sub_15
+  - sub_17
+  - sub_18
+  - sub_19
+  - sub_20
+  - sub_21
+  - sub_22
+  - sub_23
+  - sub_24
+  - sub_25
+  - sub_29
+  - sub_31
+  - sub_32
+  - sub_33
+  - sub_34
+  - sub_36
+  - sub_44
+  - sub_50
+  - sub_52
+  - sub_53
+  - sub_55
+  - sub_56
+  - sub_57

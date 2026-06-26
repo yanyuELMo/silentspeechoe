@@ -1,0 +1,25 @@
+# @package _global_
+
+train:
+  batch_size: 64
+  max_epochs: 50
+  num_epochs: 50
+  learning_rate: 0.0007
+  weight_decay: 0.0001
+  num_workers: 8
+  device: cuda
+  name: imu_binaural_tcn_subjects36_nonsemantic_all_mfcc_sequence_ce_augmix10
+  output_dir: outputs/runs/augmented/${train.name}
+  seed: 42
+  input_type: mfcc_sequence_processed
+  processed_dir: imu/features/mfcc/original/imu_mfcc_sequence_binaural_189
+  target_processed_dir: imu/features/mfcc/original/imu_mfcc_sequence_binaural_189
+  augmented_processed_dir: imu/features/mfcc/augmented/imu_mfcc_sequence_binaural_189_noise10
+  augmented_mix_ratio: 0.1
+  augmented_mix_seed: 42
+  loss:
+    name: cross_entropy
+
+hydra:
+  run:
+    dir: outputs/runs/augmented/${train.name}

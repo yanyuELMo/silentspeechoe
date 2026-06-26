@@ -1,0 +1,35 @@
+# @package _global_
+
+train:
+  batch_size: 128
+  max_epochs: 50
+  num_epochs: 50
+  learning_rate: 0.001
+  num_workers: 4
+  device: cuda
+  name: imu_left_tcn_subjects36_nonsemantic_all_augmented
+  output_dir: outputs/runs/augmented/${train.name}
+  seed: 42
+  input_type: sensor_window_processed
+  processed_dir: imu/imu_windows/imu_189
+  preload_windows: true
+  sides:
+    - left
+  augmentation:
+    enabled: true
+    sample_prob: 0.05
+    rotation_prob: 0.02
+    rotation_max_degrees: 5.0
+    time_warp_prob: 0.05
+    time_warp_min_scale: 0.995
+    time_warp_max_scale: 1.005
+    scaling_prob: 0.05
+    scaling_min_scale: 0.995
+    scaling_max_scale: 1.005
+    gaussian_noise_prob: 0.05
+    gaussian_noise_min_ratio: 0.01
+    gaussian_noise_max_ratio: 0.03
+
+hydra:
+  run:
+    dir: outputs/runs/augmented/${train.name}

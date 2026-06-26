@@ -1,0 +1,11 @@
+name: imu_feature_token_transformer_binaural
+in_features: 1296
+num_tokens: 27
+token_dim: 48
+hidden_dim: 128
+num_layers: 2
+num_heads: 4
+mlp_ratio: 2.0
+embedding_dim: 256
+num_classes: 36
+dropout: 0.3

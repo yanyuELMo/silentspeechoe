@@ -1,0 +1,7 @@
+name: imu_binaural_bilstm
+in_channels: 18
+hidden_size: 128
+num_layers: 2
+num_classes: 36
+dropout: 0.3
+bidirectional: true

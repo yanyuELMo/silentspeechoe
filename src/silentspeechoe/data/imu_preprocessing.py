@@ -23,7 +23,9 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
+from .imu_augmentation import IMUWindowAugmenter
 from .labels import EVENT_FIELDS
+from .subject_filtering import filter_subject_dataframe, filter_subject_records
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,8 @@ IMU_CHANNELS: list[str] = [
 _NUM_IMU_CHANNELS: int = len(IMU_CHANNELS)  # 9
 
 _IMU_REQUIRED_COLS = {"timestamp"} | set(IMU_CHANNELS)
+_MAD_TO_SIGMA = 1.4826
+_DEFAULT_EPS = 1e-6
 
 # Columns used to pair left and right event rows (same as bone-acc pairing).
 _PAIRING_KEY: list[str] = [
@@ -344,6 +348,94 @@ def resample_imu_window(
 
 
 # ---------------------------------------------------------------------------
+# Post-resampling signal conditioning
+# ---------------------------------------------------------------------------
+
+
+def median_mad_despike_imu_window(
+    x: np.ndarray,
+    *,
+    threshold: float = 8.0,
+    eps: float = _DEFAULT_EPS,
+) -> np.ndarray:
+    """Clip strong IMU spikes using a per-window Median/MAD rule.
+
+    The operation is intentionally mild: values are clipped to
+    ``median +/- threshold * 1.4826 * MAD`` per channel. Typical non-spike
+    samples are left unchanged, and flat channels are passed through.
+    """
+    _validate_preprocessed_window(x)
+    if x.shape[1] == 0 or threshold <= 0.0:
+        return x.astype(np.float32, copy=True)
+
+    median = np.median(x, axis=1, keepdims=True)
+    mad = np.median(np.abs(x - median), axis=1, keepdims=True)
+    robust_std = _MAD_TO_SIGMA * mad
+
+    out = x.astype(np.float32, copy=True)
+    valid = (robust_std > eps).reshape(-1)
+    if not np.any(valid):
+        return out
+
+    lower = median - threshold * robust_std
+    upper = median + threshold * robust_std
+    out[valid] = np.clip(out[valid], lower[valid], upper[valid])
+    return out.astype(np.float32, copy=False)
+
+
+def remove_imu_dc(x: np.ndarray) -> np.ndarray:
+    """Remove per-window, per-channel DC offsets from an IMU window."""
+    _validate_preprocessed_window(x)
+    if x.shape[1] == 0:
+        return x.astype(np.float32, copy=True)
+    mean = x.mean(axis=1, keepdims=True)
+    return (x - mean).astype(np.float32)
+
+
+def zscore_imu_window(x: np.ndarray, *, eps: float = _DEFAULT_EPS) -> np.ndarray:
+    """Apply per-window, per-channel z-score normalization."""
+    _validate_preprocessed_window(x)
+    if x.shape[1] == 0:
+        return x.astype(np.float32, copy=True)
+    mean = x.mean(axis=1, keepdims=True)
+    std = x.std(axis=1, keepdims=True)
+    std = np.where(std <= eps, 1.0, std)
+    return ((x - mean) / std).astype(np.float32)
+
+
+def condition_resampled_imu_window(
+    x: np.ndarray,
+    *,
+    despike: bool = True,
+    despike_threshold: float = 8.0,
+    remove_dc: bool = True,
+    normalize: bool = True,
+    eps: float = _DEFAULT_EPS,
+) -> np.ndarray:
+    """Apply the standard post-resampling IMU conditioning chain."""
+    _validate_preprocessed_window(x)
+    out = x.astype(np.float32, copy=True)
+    if despike:
+        out = median_mad_despike_imu_window(
+            out,
+            threshold=despike_threshold,
+            eps=eps,
+        )
+    if remove_dc:
+        out = remove_imu_dc(out)
+    if normalize:
+        out = zscore_imu_window(out, eps=eps)
+    return out.astype(np.float32, copy=False)
+
+
+def _validate_preprocessed_window(x: np.ndarray) -> None:
+    if not isinstance(x, np.ndarray):
+        raise TypeError(f"Expected np.ndarray, got {type(x)!r}")
+    if x.ndim != 2:
+        raise ValueError(f"Expected x with shape [C, T], got {x.shape}")
+
+
+# ---------------------------------------------------------------------------
 # Full preprocessing pipeline
 # ---------------------------------------------------------------------------
 
@@ -356,6 +448,9 @@ def preprocess_imu_window(
     target_sample_rate: float = 200.0,
     padding_sec: float = 0.0,
     normalize: bool = False,
+    remove_dc: bool = False,
+    despike: bool = False,
+    despike_threshold: float = 8.0,
 ) -> tuple[np.ndarray, dict]:
     """Run the full IMU preprocessing pipeline for one utterance window.
 
@@ -366,7 +461,8 @@ def preprocess_imu_window(
        padding.
     3. Clean NaN/inf values and deduplicate timestamps.
     4. Resample to a regular ``target_sample_rate`` Hz grid.
-    5. Optionally per-channel z-score normalize (disabled by default).
+    5. Optionally apply mild Median/MAD despiking, DC removal, and per-channel
+       z-score normalization.
 
     Args:
         path: Path to the IMU CSV file.
@@ -375,6 +471,9 @@ def preprocess_imu_window(
         target_sample_rate: Output sample rate in Hz.
         padding_sec: Optional padding around the window.
         normalize: If ``True``, apply per-channel z-score normalization.
+        remove_dc: If ``True``, subtract each channel's window mean.
+        despike: If ``True``, clip extreme channel values with Median/MAD.
+        despike_threshold: Robust-sigma clipping threshold for despiking.
 
     Returns:
         ``(x, meta)`` where:
@@ -411,13 +510,21 @@ def preprocess_imu_window(
         target_sample_rate=target_sample_rate,
     )
 
-    # Optional normalization.
-    if normalize:
-        x = _per_channel_zscore(x)
+    x = condition_resampled_imu_window(
+        x,
+        despike=despike,
+        despike_threshold=despike_threshold,
+        remove_dc=remove_dc,
+        normalize=normalize,
+    )
 
     meta = {
         "length": int(x.shape[1]),
         "num_finite": num_raw,
+        "despike": bool(despike),
+        "despike_threshold": float(despike_threshold),
+        "remove_dc": bool(remove_dc),
+        "normalize": bool(normalize),
     }
     return x, meta
 
@@ -432,10 +539,7 @@ def _per_channel_zscore(x: np.ndarray, eps: float = 1e-6) -> np.ndarray:
     Returns:
         Normalized ``float32`` array of shape ``[C, T]``.
     """
-    mean = x.mean(axis=1, keepdims=True)
-    std = x.std(axis=1, keepdims=True)
-    std = np.where(std <= eps, 1.0, std)
-    return ((x - mean) / std).astype(np.float32)
+    return zscore_imu_window(x, eps=eps)
 
 
 # ---------------------------------------------------------------------------
@@ -487,6 +591,7 @@ def build_imu_records(
     raw_dir = Path(raw_dir)
     df = pd.read_csv(events_path)
     _validate_event_columns(df)
+    df = filter_subject_dataframe(df)
 
     records: list[dict] = []
 
@@ -576,6 +681,10 @@ class IMUDataset(Dataset):
     Preprocessing (slice → clean → resample) is applied per-sample in
     ``__getitem__``.  No fixed-length coercion happens here — use
     :func:`imu_pad_collate` to pad within a batch.
+
+    If ``augmenter`` is provided, it is applied to the preprocessed
+    ``[9, T]`` tensor before the sample is returned. The original tensor
+    is kept in ``x_original`` so downstream code can inspect it.
     """
 
     def __init__(
@@ -585,11 +694,13 @@ class IMUDataset(Dataset):
         target_sample_rate: float = 200.0,
         padding_sec: float = 0.0,
         normalize: bool = False,
+        augmenter: IMUWindowAugmenter | None = None,
     ):
-        self.records = records
+        self.records = filter_subject_records(records)
         self.target_sample_rate = target_sample_rate
         self.padding_sec = padding_sec
         self.normalize = normalize
+        self.augmenter = augmenter
 
         # In-memory cache for loaded DataFrames, keyed by path.
         self._df_cache: dict[str, pd.DataFrame] = {}
@@ -630,10 +741,16 @@ class IMUDataset(Dataset):
             )
             if self.normalize:
                 x = _per_channel_zscore(x)
-            length = int(x.shape[1])
 
-        return {
-            "x": torch.from_numpy(x),
+        x_tensor = torch.from_numpy(x)
+        x_original = x_tensor.clone() if self.augmenter is not None else None
+        if self.augmenter is not None:
+            x_tensor = self.augmenter(x_tensor)
+
+        length = int(x_tensor.shape[1])
+
+        item = {
+            "x": x_tensor,
             "y": int(rec["label_id"]),
             "length": length,
             "domain": rec["domain"],
@@ -643,6 +760,9 @@ class IMUDataset(Dataset):
             "repeat_id": int(rec["repeat_id"]),
             "side": rec["side"],
         }
+        if x_original is not None:
+            item["x_original"] = x_original
+        return item
 
 
 # ---------------------------------------------------------------------------
@@ -731,14 +851,18 @@ def imu_pad_collate(batch: list[dict]) -> dict:
 
 
 class PrecomputedIMUDataset(Dataset):
-    """Torch Dataset that loads pre‑computed IMU windows from ``.pt`` files.
+    """Torch Dataset that loads pre-computed IMU windows from ``.pt`` files.
 
     Assumes windows were pre‑computed by a preprocessing script.  Each
     ``.pt`` file contains a dict with keys ``x`` (``[9, T]`` tensor),
     ``y``, ``domain``, ``subject_id``, ``session_id``, ``sentence_id``,
     ``repeat_id``, ``side``, ``length``.
 
-    ``__getitem__`` only does a ``torch.load`` call — near‑zero CPU cost.
+    ``__getitem__`` only does a ``torch.load`` call — near-zero CPU cost.
+
+    If ``augmenter`` is provided, it is applied to the loaded ``[C, T]``
+    tensor before the sample is returned. The original tensor is kept in
+    ``x_original`` so downstream code can inspect it.
 
     Args:
         manifest_path: Path to the ``manifest.json`` file.
@@ -754,6 +878,7 @@ class PrecomputedIMUDataset(Dataset):
         features_dir: str | Path,
         *,
         channel_indices: list[int] | None = None,
+        augmenter: IMUWindowAugmenter | None = None,
     ):
         import json
 
@@ -764,8 +889,9 @@ class PrecomputedIMUDataset(Dataset):
             manifest_data = json.load(f)
 
         self.features_dir = features_dir
-        self.records: list[dict] = manifest_data["records"]
+        self.records: list[dict] = filter_subject_records(manifest_data["records"])
         self.channel_indices = channel_indices
+        self.augmenter = augmenter
 
         # Store preprocessing params for reference.
         self.target_sample_rate = float(manifest_data.get("target_sample_rate", 200.0))
@@ -789,7 +915,10 @@ class PrecomputedIMUDataset(Dataset):
         x = data["x"]  # [C, T]
         if self.channel_indices is not None:
             x = x[self.channel_indices, :]
-        return {
+        x_original = x.clone() if self.augmenter is not None else None
+        if self.augmenter is not None:
+            x = self.augmenter(x)
+        item = {
             "x": x,  # [C', T] — already contiguous
             "y": int(data["y"]),
             "length": int(data.get("length", data["x"].shape[1])),
@@ -798,8 +927,11 @@ class PrecomputedIMUDataset(Dataset):
             "session_id": data.get("session_id", ""),
             "sentence_id": str(data.get("sentence_id", "")),
             "repeat_id": int(data.get("repeat_id", -1)),
-            "side": data.get("side", ""),
+            "side": data.get("side", data.get("ear", "")),
         }
+        if x_original is not None:
+            item["x_original"] = x_original
+        return item
 
 
 # ---------------------------------------------------------------------------
@@ -863,7 +995,7 @@ class MFCCFeatureDataset(Dataset):
             manifest_data = json.load(f)
 
         self.features_dir = features_dir
-        self.records: list[dict] = manifest_data["records"]
+        self.records: list[dict] = filter_subject_records(manifest_data["records"])
         self.feature_dim = int(manifest_data.get("feature_dim", 234))
         self.num_channels = len(manifest_data.get("channels", IMU_CHANNELS))
         self.channels = manifest_data.get("channels", IMU_CHANNELS)

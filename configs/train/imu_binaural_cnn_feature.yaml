@@ -1,0 +1,42 @@
+# @package _global_
+
+train:
+  batch_size: 64
+  max_epochs: 50
+  num_epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_workers: 4
+  device: cuda
+  name: imu_binaural_cnn_feature_subjects36_nonsemantic_all
+  output_dir: outputs/runs/imu/clean/${train.name}
+  seed: 42
+  input_type: imu_feature_processed
+  # ── Original features (train source) ──
+  processed_dir: imu/features/original/imu_temporal_envelope_binaural_lrdiff_189
+  target_processed_dir: imu/features/original/imu_temporal_envelope_binaural_lrdiff_189
+  # ── Augmentation (optional) ──
+  # Set augmented_mix_ratio > 0 to mix augmented non_semantic samples into
+  # the training set.  E.g. 0.1 = 10 % of train_size comes from augmented
+  # features, 90 % from original features.
+  augmented_processed_dir: imu/features/augmented/imu_temporal_envelope_binaural_lrdiff_189_augmented
+  augmented_mix_ratio: 0.1
+  augmented_mix_seed: 42
+  # ── Loss ──
+  # Set loss.name to "supcon_ce" to enable SupCon + CE combination.
+  # The model must have return_features_for_training=true for this to work.
+  loss:
+    name: cross_entropy
+    temperature: 0.07
+    supcon_weight: 1.0
+    label_smoothing: 0.0
+
+  # ── Preprocessing ──
+  standardize_features: true
+  sides:
+    - left
+    - right
+
+hydra:
+  run:
+    dir: outputs/runs/imu/clean/${train.name}

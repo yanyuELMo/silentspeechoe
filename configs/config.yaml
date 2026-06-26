@@ -1,0 +1,12 @@
+defaults:
+  - data: openearable
+  - experiment: imu_left_tcn_subjects36_nonsemantic_all
+  - model: imu_temporal_cnn
+  - train: imu_left_tcn
+  - _self_
+
+seed: 42
+
+hydra:
+  run:
+    dir: ${oc.select:train.output_dir,outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}}

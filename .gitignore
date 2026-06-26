@@ -37,6 +37,10 @@ CLAUDE.md
 # Data artifacts (large raw/processed files — metadata is tracked)
 /data/raw/
 /data/processed/
+*.pt
+
+# Local experiment scripts
+/scripts/
 
 # Outputs
 outputs/runs/*
@@ -50,8 +54,10 @@ outputs/figures/*
 
 AGENTS.md
 CLAUDE.md
-
 .ssh/
 .vscode/
 Makefile
 outputs/
+data/instructions.txt
+data/instructions2.txt
+data/数据构成.txt

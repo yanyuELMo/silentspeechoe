@@ -1,0 +1,10 @@
+batch_size: 4
+max_epochs: 1
+num_epochs: 1
+learning_rate: 0.001
+num_workers: 0
+device: cpu
+name: debug
+seed: 42
+input_type: feature_bone
+processed_dir: features/bone_binaural
